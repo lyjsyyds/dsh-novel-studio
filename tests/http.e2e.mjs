@@ -395,6 +395,16 @@ try {
   check('POST /extract names the missing passage', noPassage.data?.code === 'missing-argument', noPassage.data)
   check('an unknown extract sub-path 404', (await req('POST', `/library/${enc}/extract/nope`, {})).status === 404)
 
+  const noChapters = await req('POST', `/library/${enc}/extract`, { chapters: [] })
+  check('POST /extract with an empty chapter list 400', noChapters.status === 400, `status=${noChapters.status}`)
+  check('an empty chapter list names what is missing', noChapters.data?.code === 'missing-argument', noChapters.data)
+
+  const blankChapters = await req('POST', `/library/${enc}/extract`, { chapters: [{ id: '第一章', passage: '   ' }] })
+  check('a chapter list with no text is refused too', blankChapters.status === 400, `status=${blankChapters.status}`)
+  // The refusal has to come from the chapter path: a single-passage call with the
+  // same blank text is refused as well, so only the message tells them apart.
+  check('that refusal is the chapter path speaking', JSON.stringify(blankChapters.data || {}).includes('选中的章节'), blankChapters.data)
+
   const badApply = await req('POST', `/library/${enc}/extract/apply`, { entries: 'nope' })
   check('POST /extract/apply refuses a non-list 400', badApply.status === 400, `status=${badApply.status}`)
   check('POST /extract/apply names the bad body', badApply.data?.code === 'bad-request', badApply.data)

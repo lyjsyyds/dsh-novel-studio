@@ -217,9 +217,15 @@ sessionId 的调用只进日 / 月合计、没有会话行**——小说区的�
 「补充到各区域」才落盘**；落盘时**只填空字段、`tags` 取并集**，作者已经写好的那一行永不覆盖。识别这
 一步本身不写任何东西，但它花的 token 同样记进这本书的账本。
 
+**正文里的「识别材料」**：章节面板的动作行上多了一个同名按钮，勾选要读的章节再开始——一次读一章，
+不必先把正文交给 AI 写回，也不用把整本书扫一遍。正在编辑的那一章读编辑器里的文字（含还没保存的
+改动），其它章读已保存的正文；每一章各算一次调用、都记进同一本账，读回来的清单合并成一张表：同一个
+条目在几章里都出现时并成一行，先出现那一章给出的值不会被后面的覆盖，只补它没写的字段。清单同样默认
+全勾，只有点「补充到各区域」才落盘。
+
 | 路由 | 作用 |
 | --- | --- |
-| `POST /library/:book/extract` | `{ chapter?, passage }` → 用本书模型读出 `plan`（`entries` / `dropped` / `counts`），**不写盘** |
+| `POST /library/:book/extract` | `{ chapter?, passage }` 或 `{ chapters: [{ id, passage }] }`（一章一次调用，再合并）→ 用本书模型读出 `plan`（`entries` / `dropped` / `counts`），**不写盘** |
 | `POST /library/:book/extract/apply` | `{ entries: [...] }` 把选中的条目写进各分区，返回 `written` / `updated` / `skipped` |
 
 哪些分区是候选由 schema 决定：`records` 或 `doc` 且声明了标题字段的单元，章节 / 素材 / 草稿不在其中；
@@ -313,13 +319,13 @@ node tests/export.smoke.mjs    # 70 项 · 导出格式与发布
 node tests/edges.smoke.mjs     # 59 项 · 关系的增删改与字段回写
 node tests/prompt.smoke.mjs    # 60 项 · 提示词装配、接地、可勾选分区的渲染与预算截断
 node tests/ai.smoke.mjs        # 198 项 · 取数、勾选、多轮历史、路由、流式回吐、篇幅要求、token 账本、调用归属、AI 扩展缝（假 llm 桩，不联网）
-node tests/extract.smoke.mjs   # 110 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、账本（假 llm 桩）
+node tests/extract.smoke.mjs   # 129 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、按章连读与合并、账本（假 llm 桩）
 node tests/bindings.smoke.mjs  # 23 项 · 多值字段（势力成员 / 物品持有者 / 面板归属）与多对多绑定、派生边
 node tests/model.smoke.mjs     # 46 项 · 每书独立模型：归一化、继承规则、目录归一化、路由真的进了调用
-node tests/studio.smoke.mjs    # 66 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、浏览器半边的文本契约与装载
+node tests/studio.smoke.mjs    # 69 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、浏览器半边的文本契约与装载
 
 # 对运行中的 DSH 打真实 HTTP
-node tests/http.e2e.mjs        # 203 项 · 真实路由（含 /library/:book/model、/efforts、/extract、/root 与 /folders）+ 热重载
+node tests/http.e2e.mjs        # 207 项 · 真实路由（含 /library/:book/model、/efforts、/extract（单段与按章）、/root 与 /folders）+ 热重载
 
 # 安装到 desktop profile（本地 link）
 dsh plugin --profile desktop add link:<此目录的绝对路径>

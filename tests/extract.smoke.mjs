@@ -338,6 +338,99 @@ try {
     'llm-error',
   )
 
+  // ── recognizeChapters: one call per chapter, merged into one list ──────
+  const planMerge = extract.mergeExtractPlans([
+    {
+      chapter: '第一章',
+      plan: {
+        entries: [
+          { key: 'world/items', zh: '物品', name: '潮汐罗盘', exists: false, fields: { type: '法器', description: '' }, fieldLabels: {} },
+          { key: 'characters', zh: '人物', name: '阿枝', exists: false, fields: { role: '船工' }, fieldLabels: {} },
+        ],
+        dropped: [{ name: '空字段' }],
+      },
+    },
+    {
+      chapter: '第二章',
+      plan: {
+        entries: [
+          { key: 'world/items', zh: '物品', name: '潮汐罗盘', exists: true, fields: { description: '指北。', type: '不该覆盖' }, fieldLabels: {} },
+        ],
+        dropped: [],
+      },
+    },
+  ])
+  check('merge: a name met twice is one row', planMerge.entries.length === 2, planMerge.entries.map((e) => e.name))
+  check('merge: a blank field is filled by the later chapter', planMerge.entries[0].fields.description === '指北。', planMerge.entries[0].fields)
+  check('merge: a field that already has a value is kept', planMerge.entries[0].fields.type === '法器', planMerge.entries[0].fields)
+  check('merge: the first answer decides “exists”', planMerge.entries[0].exists === false)
+  check('merge: the row names every chapter it came from', JSON.stringify(planMerge.entries[0].from) === '["第一章","第二章"]', planMerge.entries[0].from)
+  check('merge: counts follow the merged list', planMerge.counts.entries === 2 && planMerge.counts.fresh === 2 && planMerge.counts.dropped === 1, planMerge.counts)
+  check('merge: the chapters are listed in reading order', JSON.stringify(planMerge.chapters) === '["第一章","第二章"]', planMerge.chapters)
+
+  const manySeen = []
+  const oneText = '顾云舟掏出潮汐罗盘，MARK-ONE。'
+  const twoText = '阿枝把断桅刀插回鞘里，MARK-TWO。'
+  const answers = {
+    'MARK-ONE': JSON.stringify({
+      entries: [
+        { target: 'world/items', name: '潮汐罗盘', fields: { type: '材料', description: '指北。' } },
+        { target: 'characters', name: '阿枝', fields: { role: '船工' } },
+      ],
+    }),
+    'MARK-TWO': JSON.stringify({
+      entries: [
+        { target: 'world/items', name: '潮汐罗盘', fields: { description: '不该覆盖' } },
+        { target: 'world/items', name: '断桅刀', fields: { type: '武器' } },
+      ],
+    }),
+  }
+  const many = {
+    stream(options) {
+      manySeen.push(options)
+      const sent = String(options.messages?.[0]?.content?.[0]?.text || '')
+      const marker = Object.keys(answers).find((key) => sent.includes(key))
+      return (async function* () {
+        yield TEXT(marker ? answers[marker] : '{"entries":[]}')
+        yield { type: 'usage', usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+  const batch = await extract.recognizeChapters({
+    llm: many,
+    selection: () => ({ provider: 'harness', model: 'default-model' }),
+    bookDir,
+    book: {},
+    chapters: [
+      { id: '第一章', passage: oneText },
+      { id: '第二章', passage: twoText },
+      { id: '第三章', passage: '   ' },
+    ],
+  })
+  check('a batch asks once per chapter that has text', manySeen.length === 2, manySeen.length)
+  check('a chapter with no text is never sent', !manySeen.some((o) => String(o.messages?.[0]?.content?.[0]?.text || '').includes('第三章')))
+  check('an empty chapter is named on the plan', JSON.stringify(batch.plan.empty) === '["第三章"]', batch.plan.empty)
+  check('the batch merges the chapters into one list', batch.plan.entries.length === 3, batch.plan.entries.map((e) => e.name))
+  const compass = batch.plan.entries.find((e) => e.name === '潮汐罗盘')
+  check('a name from two chapters is filed once, gaps filled', !!compass && compass.fields.type === '材料' && compass.fields.description === '指北。', compass && compass.fields)
+  check('the merged row names both chapters', JSON.stringify(compass.from) === '["第一章","第二章"]', compass.from)
+  check('the batch lists the chapters it read', JSON.stringify(batch.plan.chapters) === '["第一章","第二章"]', batch.plan.chapters)
+  check('the batch sums the usage of every call', batch.usage.totalTokens === 240 && batch.usage.inputTokens === 200, batch.usage)
+  check('the batch reports one call per chapter', batch.calls.length === 2 && batch.calls[0].chapter === '第一章', batch.calls)
+  check('a batch writes nothing either', (await items('world', 'items')).every((r) => r.name !== '潮汐罗盘' && r.name !== '断桅刀'))
+
+  await rejectsWith(
+    'a batch with no chapters is refused',
+    async () => extract.recognizeChapters({ llm: many, selection: () => ({ provider: 'p', model: 'm' }), bookDir, chapters: [] }),
+    'missing-argument',
+  )
+  await rejectsWith(
+    'a batch where every chapter is empty is refused',
+    async () => extract.recognizeChapters({ llm: many, selection: () => ({ provider: 'p', model: 'm' }), bookDir, chapters: [{ id: '第一章', passage: ' ' }] }),
+    'missing-argument',
+  )
+
   // ── the ops route behind the tool ─────────────────────────────────────
   const viaOps = await invoke('extract', {
     action: 'apply',

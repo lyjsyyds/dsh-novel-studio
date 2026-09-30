@@ -287,7 +287,10 @@ try {
   check('client: every t() key is declared in Chinese', missingZh.length === 0, missingZh.join(','))
   check('client: every t() key is declared in English', missingEn.length === 0, missingEn.join(','))
   check('client: the enlarge view is mounted exactly once, in the root', (clientText.match(/h\(Zoom, \{/g) || []).length === 1)
-  const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar']
+  check('client: the chapter pane reads the chapters the author ticks', (clientText.match(/h\(ExtractPicker, \{/g) || []).length === 1)
+  check('client: both entry points share the one review drawer', (clientText.match(/h\(ExtractBox, \{/g) || []).length === 2)
+  check('client: a ticked batch is sent as one list, not one request per chapter', clientText.includes('{ chapters: passages }'))
+  const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
   const missingCss = zoomClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
 
   // Loading it is not out of reach either: the loader is stubbed, React is
