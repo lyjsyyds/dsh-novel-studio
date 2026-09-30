@@ -301,6 +301,9 @@ sessionId 的调用只进日 / 月合计、没有会话行**——小说区的�
 ## 开发
 
 ```bash
+# 全部 12 套顺序跑一遍（约 10 秒，输出每套自己的逐项结果）
+npm test
+
 # 冒烟测试（不需要 DSH 在跑）
 node tests/library.smoke.mjs   # 57 项 · 数据层与文件夹浏览
 node tests/units.smoke.mjs     # 52 项 · 条目读写

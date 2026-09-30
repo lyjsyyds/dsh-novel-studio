@@ -3,7 +3,27 @@
   "version": "0.2.0",
   "description": "Novel Studio — a dedicated writing partition for DSH: characters, worldbuilding, outline, panels, chapters.",
   "license": "MIT",
+  "author": "LYJS",
   "type": "module",
+  "scripts": {
+    "test": "node scripts/run-tests.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lyjsyyds/dsh-novel-studio.git"
+  },
+  "homepage": "https://github.com/lyjsyyds/dsh-novel-studio#readme",
+  "bugs": {
+    "url": "https://github.com/lyjsyyds/dsh-novel-studio/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "novel",
+    "writing",
+    "markdown"
+  ],
   "main": "./lib/index.js",
   "exports": {
     ".": "./lib/index.js",
