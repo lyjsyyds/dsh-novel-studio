@@ -424,7 +424,7 @@ try {
 
   // ── the task menu is exposed for the panel ──────────────────────────────
   const tasks = await ai.aiTasks()
-  check('the AI layer exposes the task menu', tasks.length === 4 && tasks[0].key === 'continue', tasks.map((t) => t.key))
+  check('the AI layer exposes the task menu', tasks.length === 5 && tasks[0].key === 'continue', tasks.map((t) => t.key))
   check('the menu is serializable', typeof JSON.stringify(tasks) === 'string')
   check('no built-in task claims an extension', tasks.every((t) => t.extension === undefined), tasks.map((t) => t.extension))
 
@@ -438,7 +438,7 @@ try {
     check('TOOL_NAMES lists novel_ai', toolsMod.TOOL_NAMES.includes('novel_ai'), toolsMod.TOOL_NAMES)
 
     const listed = await novelAi.execute({ action: 'list' })
-    check('novel_ai lists the task menu', listed.ok === true && listed.tasks?.length === 4 && listed.tasks[0].key === 'continue', listed)
+    check('novel_ai lists the task menu', listed.ok === true && listed.tasks?.length === 5 && listed.tasks[0].key === 'continue', listed)
     const badAction = await novelAi.execute({ action: 'summarize' })
     check('an unknown action is a refusal value', badAction.ok === false && badAction.code === 'unknown-action', badAction)
     const noBook = await novelAi.execute({ action: 'context' })

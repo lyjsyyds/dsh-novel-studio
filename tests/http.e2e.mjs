@@ -266,7 +266,7 @@ try {
   // provider — tests/ai.smoke.mjs drives the streaming path with a stub.)
   const aiTasks = await req('GET', `/library/${enc}/ai/tasks`)
   check('GET /ai/tasks 200', aiTasks.status === 200, `status=${aiTasks.status}`)
-  check('the AI task menu has four entries', (aiTasks.data?.tasks || []).length === 4, (aiTasks.data?.tasks || []).length)
+  check('the AI task menu has five entries', (aiTasks.data?.tasks || []).length === 5, (aiTasks.data?.tasks || []).length)
   check('the AI task menu starts with continue', aiTasks.data?.tasks?.[0]?.key === 'continue', aiTasks.data?.tasks?.[0])
   check('every AI task describes itself', (aiTasks.data?.tasks || []).every((x) => x.key && x.zh && x.hint))
   check('POST /ai/tasks 405', (await req('POST', `/library/${enc}/ai/tasks`)).status === 405)

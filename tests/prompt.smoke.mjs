@@ -37,10 +37,10 @@ const { LIMITS, TASKS, buildPrompt, listTasks, taskOf } = await fresh('prompt.js
 // ── the menu ──────────────────────────────────────────────────────────────
 {
   const tasks = listTasks()
-  check('four tasks are on the menu', tasks.length === 4, tasks.map((t) => t.key))
+  check('five tasks are on the menu', tasks.length === 5, tasks.map((t) => t.key))
   check(
     'the menu names the tasks the panel shows',
-    tasks.map((t) => t.key).join() === 'continue,polish,outline,review',
+    tasks.map((t) => t.key).join() === 'continue,continue-new,polish,outline,review',
     tasks.map((t) => t.key),
   )
   check('every task carries a hint', tasks.every((t) => typeof t.hint === 'string' && t.hint.length > 0))
@@ -48,7 +48,7 @@ const { LIMITS, TASKS, buildPrompt, listTasks, taskOf } = await fresh('prompt.js
   check('taskOf defaults to continue', taskOf().key === 'continue')
   check('taskOf reads a key', taskOf('polish').key === 'polish')
   throwsWith('an unknown task is refused', () => taskOf('nope'), 'unknown-task')
-  check('TASKS is the same menu', TASKS.length === 4)
+  check('TASKS is the same menu', TASKS.length === 5)
 }
 
 // ── required inputs ───────────────────────────────────────────────────────
@@ -119,6 +119,27 @@ const context = {
 {
   const built = buildPrompt({ task: 'continue', instruction: '让老周出场' }, context)
   check('an author instruction is rendered', built.user.includes('### 作者本次的额外要求') && built.user.includes('让老周出场'))
+}
+
+// ── the two continuations ─────────────────────────────────────────────────
+// Same chapter goes in, different work comes out: one lengthens what is on
+// screen, the other opens the next one. They are separate menu entries rather
+// than a switch, so the author picks the intention before spending a round.
+{
+  const here = buildPrompt({ task: 'continue' }, context)
+  const next = buildPrompt({ task: 'continue-new' }, context)
+  check('the two continuations ask different questions', here.user !== next.user && here.system !== next.system)
+  check('this-chapter continuation stays inside the chapter', here.system.includes('不要另起一章'))
+  check('the next-chapter continuation asks for another chapter', next.system.includes('另起新的一章'))
+  check(
+    'the next-chapter continuation names the chapter it starts from',
+    next.user.includes('另起新的一章') && next.user.includes('### 上一章的正文'),
+  )
+  check('the next-chapter continuation still reads the previous chapter', next.user.includes('夜里，船离港了。'))
+  check(
+    'the next-chapter continuation has room for a whole chapter',
+    next.maxTokens === taskOf('continue-new').maxTokens && next.maxTokens > here.maxTokens,
+  )
 }
 
 {

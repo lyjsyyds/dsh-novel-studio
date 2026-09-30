@@ -295,6 +295,17 @@ try {
   check('client: only the shared form reads or writes a book’s route', (clientText.match(/\/model`/g) || []).length === 2)
   check('client: the AI tab kept no second copy of the picker', !clientText.includes('setModelOpen'))
   check('client: a slice that could not be read is reported', clientText.includes("t('aiExtractMissed')"))
+  check(
+    'client: the answer box is an editable box, not a printout',
+    clientText.includes("h('textarea', {") &&
+      clientText.includes("'data-ai-out': '1'") &&
+      clientText.includes("className: 'ns-ai-out'") &&
+      !clientText.includes("h('pre', { className: 'ns-ai-out'"),
+  )
+  check('client: a long answer cannot swallow the panel', /\.ns-ai-out\{[^}]*max-height/.test(clientText))
+  check('client: the answer can be filed as a chapter of its own', clientText.includes("{ value: 'newchapter' }"))
+  check('client: a new chapter is written through the unit route', clientText.includes('unit/chapters`, { title, body: text }'))
+  check('client: the next chapter name is guessed from the book', (clientText.match(/nextChapterTitle\(/g) || []).length >= 3)
   const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
   const missingCss = zoomClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
 
