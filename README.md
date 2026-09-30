@@ -1,0 +1,405 @@
+# Novel Studio
+
+一个独立于任务与聊天之外的**小说分区**，作为 DeepSeek Harness 插件运行。
+
+侧栏出现一本书的图标；点开后是两块：左边**书架**（每部小说一个条目，标题旁一个箭头可以把它折成
+一条竖边、把宽度全让给正文，选择记在浏览器里，没记录时默认收起），右边当前作品的**十一个分区**
+（总览 · 人物 · 世界观 · 大纲 · 面板 · 正文 · 素材 · **草稿**）加上 **检索 · 进度 · 导入 · 设置** 与
+**关系图 · 校验 · AI · 导出** 八个工具标签。
+
+**检索**在一个地方找遍整本书：正文（带行号）、每一条记录、每个字段、素材文件名、原始 YAML。
+搜到的条目点一下就跳到它所属的分区并高亮，所以「这个名字到底在哪写过」不用挨个标签翻。
+
+**进度**把写作量画出来：总字数、今日与本周、连续写作天数、30 天历史曲线，以及设了目标之后的
+「还差多少 / 每天要写多少 / 按当前速度哪天写完」。它按**每日净产出**记账（`progress.yaml`），
+所以删掉一段正文是负的，不是「今天写了 0 字」。
+
+**关系图**把人物、势力、地点、物品画成一张网：名字旁边的字段（势力的 `leader`、地点的 `region`、
+物品的 `owner`）会自动连边，手写的边存在 `relationships.yaml` 里。只看人物时，各人所属的势力仍会
+作为灰色上下文节点画出来，所以不会看到一堆孤立的点。
+
+**校验**跑一遍书的内部一致性：悬空的边、指向未知条目的 `[[链接]]`、重号或断号的章节、还没回收的
+伏笔、空分区等等，分「错误 / 提醒 / 提示」三档列出来。它**只读**，不会改任何文件。
+
+**导出**把整本书渲染成一份可读的稿子：Markdown 手稿、纯文本、可打印的单页 HTML，或者一份完整的
+JSON 备份（含所有分区数据与素材正文，且不含本地路径）。可以在面板里预览、复制、下载，也能落盘到该书的
+`publish/` 目录并留下 `manifest.yaml` 记录；扩展可以再添自己的格式。
+
+**导入与恢复**是导出的回程：一份 JSON 备份可以**整体恢复**（逐分区报告会写什么、跳过什么、删什么）
+或**恢复成一本书**；一段粘贴进来的 Markdown 手稿可以按它自己的 `# 第一章` 切章，追加或整本替换；
+书里 `materials/`、`publish/`、`import/` 下已有的 `.md` / `.txt` / `.json` 也能直接读进来。**默认只预览**，
+确认之后才落盘，替换整本书还要再确认一次。
+
+**草稿箱**在改章节之前先留快照，改坏了能退回去；从草稿恢复时会先自动存一份「恢复前的样子」，
+所以退回一步本身也是可退的。
+
+它同时是一块**留给 AI 继续加东西的地盘**：新分区、新路由、新工具都是 `lib/extensions/` 下的一个
+`.js` 文件，写完下一个请求就生效。见 [EXTENSIONS.md](EXTENSIONS.md)。
+
+## 为什么是插件而不是一堆文件夹
+
+小说数据本身就是**纯文件**——每部作品在书库根目录下拥有一个完全独立的目录，结构化记录用 YAML，
+正文用 Markdown。你可以直接打开文件夹阅读、手改、丢进 git，插件只是一层透镜。
+多部作品之间不共享任何东西：人物、世界观、大纲、面板、正文互不干扰。
+
+```
+~/.dsh/novels/<书名>/
+  book.yaml                作品元信息
+  settings.yaml
+  characters/<id>.yaml     人物
+  relationships.yaml       关系
+  world/                   世界观：rules / locations / factions / timeline / items / races / cultures / economy / glossary
+  outline/                 大纲：tree / threads / scenes / foreshadowing / beats / hooks
+  panels/                  面板：status / skills / equipment / tasks / reputation + custom/
+  chapters/<id>.md         正文（YAML front matter + Markdown 正文）
+  meta/                    章节元信息
+  drafts/                  草稿
+  materials/               素材
+  publish/                 发布产物
+```
+
+书库根目录默认 `~/.dsh/novels`。位置按四层决定，**先匹配先生效**：显式参数 → 环境变量
+`DSH_NOVEL_ROOT` → 面板上保存的位置（写到 `~/.dsh/novel-studio.yaml` 的 `root`）→ 默认位置。
+环境变量**故意压过**面板设置：部署或测试拿 `DSH_NOVEL_ROOT` 钉住书库时，面板就改不动它
+（`GET /root` 回 `locked: true`），否则一次面板操作就能把测试的书写进真实书库。
+
+面板书架底部写着当前位置、来源和一个「更改」：点「浏览」会打开**系统自己的文件夹选择框**（和「打开
+工作空间」用的是同一个 Host 对话框，任意磁盘都能去），选好就填进输入框，再按「切换」才真正生效
+——浏览本身什么都不改。没有那个服务时（或直接手填路径也可以）会退回到面板内置的只读文件夹浏览器：
+从「这台电脑」逐级点下去（只列文件夹，另有「上一级 / 磁盘 / 主目录」三个快捷跳转），按
+「用这个文件夹」填进输入框。也可以勾上「把现有的书
+一起搬过去」，确认后**下一个请求就生效，不用重启**——`lib/api.js` 每个请求都重新解析一次位置。
+搬运用逐本 `rename`（跨盘退回拷贝 + 删除），撞名的书留在原处并在结果里记 `target-exists`，
+**永不覆盖**。
+新位置必须是绝对路径，且不能是当前位置的上层或子目录：两个书库互相套住，下次扫描就会把同一批
+书数两遍。
+
+| 路由 | 作用 |
+| --- | --- |
+| `GET /root` | 书库在哪、为什么在那（`source`）、是否被环境变量钉住、配置文件路径 |
+| `POST /root` | `{ root, move? }` 换位置（`move: true` 连书一起搬）；`{ reset: true }` 交还给默认 |
+| `GET /folders` | `?path=` 逐级列文件夹：不给 `path` 列这台电脑的盘符，给了就列该目录下的子文件夹（`parent`/`home` 供跳转）。只在这台 Host 没有原生文件夹对话框时给面板「浏览」当回落（有对话框时走 `uiWorkspace.pickDirectory()`）；只读，从不写盘 |
+
+## 结构
+
+| 文件 | 半边 | 作用 |
+| --- | --- | --- |
+| `lib/index.js` | host | 稳定载体：注册前缀路由 + agent 工具，**递归**按 mtime 热重载 `lib/` 下所有 `.js` |
+| `lib/api.js` | host | HTTP 路由分发（`/ping`、`/bootstrap`、`/schema`、`/root`、`/folders`、`/library[...]`、`/ext/...`） |
+| `lib/ops.js` | host | **统一操作层**：`invoke(operation, payload)`，HTTP / 工具 / 扩展共用，从不抛异常 |
+| `lib/library.js` | host | 数据层：书库扫描、建书脚手架、原子写、计数、增删改查 |
+| `lib/schema.js` | host | 声明式分区树（六种 kind）+ 扩展发现与合并 |
+| `lib/records.js` | host | 通用条目读写（records / doc / chapters / files / raw） |
+| `lib/graph.js` | host | 关系图：节点、边、字段自动连边、图内异常（只读） |
+| `lib/edges.js` | host | 关系图的写方：增删改一条关系（手写行 or 记录字段） |
+| `lib/validate.js` | host | 一致性校验：13 条内置规则 + 扩展规则（只读） |
+| `lib/export.js` | host | 导出与发布：四种内置格式 + 扩展格式、`publish/` 产物清单 |
+| `lib/search.js` | host | 全库检索：正文（带行号）、记录字段、文件名、原始 YAML，同一个字段只报一次 |
+| `lib/chapters.js` | host | 章节的读序与改名：排序计划、断号 / 重号 / 未编号诊断、重排、重编号，以及草稿箱 |
+| `lib/progress.js` | host | 写作进度：`progress.yaml` 里的每日净产出、目标、节奏推算与 30 天历史 |
+| `lib/import.js` | host | 导入与恢复：JSON 备份回灌、Markdown 切章、书内文件直读，默认 dry-run |
+| `lib/usage.js` | host | 每本书一本 token 账本（`usage.yaml`）：拼写归一化、累加、归零 |
+| `lib/extract.js` | host | 写回正文后的补材料：把一段正文里新出现的人 / 地 / 物列成清单，交回前按 schema 校验，落库只填空字段 |
+| `lib/prompt.js` | host | **纯函数**的提示词装配：四个 AI 任务、设定渲染、预算截断、`buildPrompt` |
+| `lib/ai.js` | host | AI 联动：取书里的真实数据 → 拼提示词 → 认路由 → 调 `llm.stream` 流式回吐 |
+| `lib/tools.js` | host | 模型可见工具的定义（含扩展贡献的工具） |
+| `lib/extensions/` | host | 扩展目录；`_` 开头的文件保留但不加载 |
+| `lib/client.js` | browser | 唯一浏览器入口：注册 `sidebar.panellist` 与 `main` 两个 seam |
+| `EXTENSIONS.md` | — | 扩展开发指南 |
+| `tests/*.mjs` | — | 冒烟测试，独立于 DSH 运行 |
+
+**为什么要 `lib/index.js` 这一层。** DSH 在进程启动时加载一次 host 半边，直接写在里面的代码改完必须
+重启 App 才生效。所以除它以外的一切都放进会被重新 `import` 的模块里——`index.js` 每次请求递归扫描
+`lib/**/*.js` 算指纹，指纹变了就换一个 `?v=<指纹>` 重新加载，**下一个请求就是新代码**。指纹是递归的，
+所以新增一个扩展文件本身就会触发重载。只有 `index.js` 自身改动才需要重启。
+
+浏览器半边由模块加载器在**页面加载时**取用，改完刷新页面即可。
+
+## 给 AI 的接口
+
+插件向 DSH 的 `tools` 服务注册十六个工具（经 `ctx.inject(['tools'], …)`，没有该服务时面板照常工作）：
+
+| 工具 | 作用 |
+| --- | --- |
+| `novel_guide` | 读插件手册：`overview` / `data` / `extend` |
+| `novel_library` | 建书、列书、改元信息、删书 |
+| `novel_records` | 读写真个分区里的条目；`action: 'schema'` 先看分区在哪 |
+| `novel_graph` | 取关系网；`kinds: 'list'` 看有哪些节点类型，传数组则只取那几类 |
+| `novel_link` | 增删改一条关系；派生边改的是记录字段，各分区同步 |
+| `novel_validate` | 跑一致性校验，返回错误 / 提醒 / 提示三档清单（只读） |
+| `novel_export` | 渲染整本书并交回文本（md / txt / html / json），**不写盘** |
+| `novel_publish` | 落盘到 `publish/`：`formats` / `list` / `write` / `delete` |
+| `novel_extension` | 装扩展：`scaffold` 出模板 → `write` 写入 `lib/extensions/` |
+| `novel_ai` | 在聊天里跑这本书的 AI 任务：`list` 看菜单 / `context` 预览会读到什么 / `run` 真跑一轮（同样支持 `pick` 与 `history`） |
+| `novel_search` | 在整本书里找词：正文（含行号）、记录字段、文件名、原始 YAML，返回命中位置与片段 |
+| `novel_chapters` | 读序计划（编号风格、断号 / 重号 / 未编号）、`reorder` 重排、`renumber` 重编号（`dryRun` 先看） |
+| `novel_drafts` | 草稿箱：`list` / `read` / `save`（改章节前的快照）/ `restore`（冲突要 `force`）/ `delete` |
+| `novel_progress` | 进度：`get` 拿总字数、今日 / 本周、连续天数、30 天历史与节奏；`set` 定目标字数与截止日 |
+| `novel_import` | 导入：`list` 书内可导入的文件 / `backup` 读 JSON 备份（`describe` 先看内容）/ `markdown` 按标题切章 |
+| `novel_extract` | 读一段正文并列出新条目：`recognize` 只给清单（不写盘）/ `apply` 把选中的条目补进各分区，只填空字段 |
+
+`novel_extension` 的 `write` 会真的 `import` 一次做校验——语法错、顶层抛错、导出形状不对，都会把文件
+**回滚删除**并说明原因。工具集合在指纹变化时重新同步，所以扩展新增的工具同样不需要重启。
+
+## AI 联动
+
+面板的「AI」标签把这本书的**真实数据**喂给模型，做续写、润色、大纲推演、一致性审稿。取的是
+当前书的关系图、人物、世界规则、术语、故事线、情节节拍、章节索引和校验问题，不是让模型凭记忆猜。
+
+跑一轮之前可以**勾选要喂进去的条目**：面板会按分区列出这本书已有的内容（人物、地点、势力、物品、
+种族、文化、规则、术语、经济、年表事件、卷章结构、线索、伏笔、节拍、钩子、场景、面板各项……），
+默认全选，取消勾选的条目不会进入提示词。分区列表由 `lib/schema.js` 推导，所以之后新增的分区
+（包括扩展贡献的）会自动出现在勾选面板里。
+
+| 路由 | 作用 |
+| --- | --- |
+| `GET /library/:book/ai/tasks` | 四个任务的可序列化菜单（`key` / `zh` / `needs` / `hint`） |
+| `GET /library/:book/ai/context` | 「AI 会读到什么」的预览计数 + 勾选目录（`?pick=<json>` 反映当前选择，**不含正文**） |
+| `POST /library/:book/ai` | 跑一个任务，`text/event-stream` 逐块回吐（body 里的 `pick` 决定读哪些条目） |
+
+`pick` 的形状是 `{ 分区键: [条目 id, …] }`：数组表示只留这些条目，空数组或 `false` 表示整段不要，
+`true` 表示整段都要，没提到的分区按默认（全要）处理。分区键就是分区路径（`characters`、
+`world/locations`、`world/timeline`、`outline/beats`…）。形状不对会被**在开流之前**用 `400 bad-pick`
+答掉，指向旧目录的未知分区键会被忽略。
+
+**多轮对话**：body 里还可以带 `history: [{ role: 'user' | 'assistant', content: '…' }]`——
+上几轮的问答会排在这次提示词之前一起交给模型，所以「续写」能顺着上一轮接着写。只保留最近
+**12 轮**、每轮最多 **4000 字符**（超出截断并加 `…`）；角色只能是 `user` 或 `assistant`。同样在
+**开流之前**校验：形状不对用 `400 bad-history` 答掉。面板的 AI 标签自己维护这份对话（每本书各自
+一本账，换书即新账，可一键清空），HTTP 调用方自行传 `history` 即可。
+
+**每本书自己的模型**：AI 默认跟着 `agentDefaultModel` 当前选的 provider / model 走，但每本书可以在
+面板「AI」标签顶部换成自己的，存进 `book.yaml` 的 `aiModel: { provider, model, reasoningEffort? }`。
+书与书之间、书与全局选择之间互不影响：`lib/ai.js` 的 `bookSelection(book, default)` 只把这本书的
+选择并到默认之上，且 **`reasoningEffort` 只在路由完全相同时才继承**（同 provider 同 model）——
+effort id 属于某个具体模型，搬到别的模型上只是猜。记录只填一半（有 provider 没 model）按「没选」
+处理，于是这本书照旧跑默认。
+
+**思考强度**（`reasoningEffort`）：模型能跑的档位由部署自己的模型登记表决定（本机 `deepseek-*` 是
+`off / low / high / max`，模型自带默认 `high`），面板在模型选择旁列出「跟随模型默认」+ 这些档位。
+选一档就照上面那样写进 `book.yaml`；选「跟随模型默认」就是不带这个字段、交回模型自己——这也是清除
+的办法。档位来自 `GET /library/:book/efforts`，面板既不问也不猜；问不到（模型不可描述、旧宿主没有
+这个接口）就不显示这一栏，而不是拿一个可能被 provider 拒掉的 id 去试。日常续写调低一档，省时间也省
+token。
+
+| 路由 | 作用 |
+| --- | --- |
+| `GET /library/:book/model` | 这本书自己的路由 + 它此刻会继承的默认 + 本机可用的模型目录 |
+| `POST /library/:book/model` | `{ provider, model, reasoningEffort? }` 保存；`{ clear: true }` 交还给默认 |
+| `GET /library/:book/efforts` | 这个模型能跑的思考强度档位 + 它自己的默认档（带 `?provider=&model=` 可查正在挑选、尚未保存的模型） |
+
+**篇幅与用量**：body 里可以带 `words`（1–20000 的整数），提示词会追加一段「### 篇幅要求」，这一轮
+的 `maxTokens` 也随之抬到 `min(8000, max(任务默认, N × 2))`；不是整数、或超出范围，用
+`400 missing-argument` 答掉（空着就是不要求）。`start` 事件回传这一轮的 `words`，`done` 事件回传
+`usage`。**开着流花的钱也算钱**：每本书一本 `usage.yaml`，只要这一轮报了 token 就记一笔，失败收尾
+的那轮同样记；拼写按 provider 常见的几种归一化（`input_tokens` / `promptTokens` …），没有 `total`
+就自己加。面板上分两层看：正文下面那行是**本轮**（跑完就刷新，下一轮开始时清零），**累计**藏在一个
+可折叠的子面板里（「累计用量 Σ …」，展开时才重新读一遍账本，里面还有轮次、起始 / 最近时间与一键
+归零）——写作时盯的是一轮花了多少，不是这本书一辈子的总数。
+
+**费用面板里的归属**：`usage.yaml` 是面板自己的账，跟部署里的计价插件（`dsh-cost-meter`）是两本账。
+插件挂在全局的 `llm/stream` 上，把每一次调用按 `options.sessionId` 分进「一个会话一行」，**没有
+sessionId 的调用只进日 / 月合计、没有会话行**——小说区的调用是手搓的（没有 agent loop 认领），所以
+过去只能趴在「无归属」里，按会话看费用时根本看不见。`lib/ai.js` 的 `attributionId(book, bookDir)`
+现在给这类调用一个自己的会话 id（`novel-studio:<书名>`），补材料那次调用同样记在所属书的名下。
+这个 id 会被 provider 直接写成 HTTP 头 `x-deepseek-harness-session-id`，而头值只能是 Latin-1 ——
+非 ASCII 的书名（例如中文）会让**每一次**调用都以 `transport failed` 失败，所以字符集容不下的书名
+统一落到共享的 `novel-studio` 一行（ASCII 书名自成一行）。每本书一行看起来更细，但费用面板对没有
+标题的会话只显示 id 的前 14 个字符，`novel-studio:` 前缀就占了 13 个，所以强行编码成乱码反而更读不懂。
+
+| 路由 | 作用 |
+| --- | --- |
+| `GET /library/:book/usage` | 这本书累计的输入 / 输出 / 缓存读 / 缓存写 / 合计 token 与轮次 |
+| `POST /library/:book/usage` | `{ reset: true }` 把账本归零（别的 body 一律 `400 bad-request`） |
+
+**写回正文后补材料**：AI 标签的写回条旁边有个默认勾上的「顺便补材料」开关——写回成功后，立刻用这
+本书自己的模型读一遍刚写进去的那段，把新出现的人 / 地 / 物 / 规则列成清单。清单默认全勾，**只有点
+「补充到各区域」才落盘**；落盘时**只填空字段、`tags` 取并集**，作者已经写好的那一行永不覆盖。识别这
+一步本身不写任何东西，但它花的 token 同样记进这本书的账本。
+
+| 路由 | 作用 |
+| --- | --- |
+| `POST /library/:book/extract` | `{ chapter?, passage }` → 用本书模型读出 `plan`（`entries` / `dropped` / `counts`），**不写盘** |
+| `POST /library/:book/extract/apply` | `{ entries: [...] }` 把选中的条目写进各分区，返回 `written` / `updated` / `skipped` |
+
+哪些分区是候选由 schema 决定：`records` 或 `doc` 且声明了标题字段的单元，章节 / 素材 / 草稿不在其中；
+扩展新加的分区自动成为候选。模型给出的区域名或字段名不在 schema 里就丢掉并记进 `dropped`，`select`
+字段的值必须命中它自己的选项表，一次最多 60 条。
+
+目录来自 host 的 `llm.listProviders()` / `llm.listModels(provider)`，在 `lib/index.js` 里由
+`shapeCatalog()` 归一化（30 秒缓存）；没有 llm 服务、或某个 provider 列不出来时降级成空目录，
+**绝不影响已经保存的路由**。`LlmProviderInfo` / `LlmModelInfo` 的字段名没有钉在宿主契约里，所以
+`id` / `key` / `provider` 与 `id` / `model` / `key` 两种写法都读。
+
+命中的 host 服务是 `llm`（`ctx.llm.stream(options)`）与 `agentDefaultModel`（`currentSelection()`
+给出当前选的 provider / model）。两个都经 `ctx.inject(…)` 取得，**不进 `inject` 声明**——
+可选依赖不该能让整个面板消失；`lib/index.js` 把句柄交给可重载的 api 层，所以它们随时可以缺席。
+
+两条设计约束：
+
+- **开流之前可能失败的一切，先用普通 JSON 答掉。** SSE 头一旦发出，未知章节或未选模型就只能
+  报成「被截断的回答」。所以 `prepareTask`（取数 → 拼词 → 认路由）和 `streamPrepared`（开流）
+  是分开的，后者只在万事俱备后才被调用。
+- **请求先于部署被判断。** 缺参数、未知任务是调用方自己能改的（`400`）；这台机器上没有可用的
+  llm 服务不是（`503`）。顺序因此是「取数 → 拼词 → 认路由 → 查服务」，坏请求永远不会被
+  说成「服务缺失」。
+
+提示词装配在 `lib/prompt.js` 里是**纯函数**：同样的输入永远得到同样的提示词，测试不需要联网。
+每个区段都有字符预算，且**把截断讲给模型听**（`…（已截断，原文还有 N 字）`），避免它自信地编造
+被切掉的人物。
+
+## 检索、章节、草稿、进度、导入
+
+这几块共用同一套约定：读走 `GET`，写走 `POST`，**凡是会大改文件的都先给一份 dry-run**，
+业务拒绝一律是普通 JSON（`400` 参数问题 / `404` 没有这个条目 / `409` 需要确认），不是半截结果。
+
+| 路由 | 作用 |
+| --- | --- |
+| `GET /library/:book/search` | `?q=&limit=&section=` 找词；每命中给分区、条目、字段、正文行号与片段 |
+| `GET /library/:book/chapters` | 读序计划：章节、字数、编号风格，以及断号 / 重号 / 未编号 |
+| `POST /library/:book/chapters/reorder` | `{ ids: [...] }` 把章节摆成这个顺序（必须是当前章节的一个排列） |
+| `POST /library/:book/chapters/renumber` | `{ start, style, width, separator, dryRun, retitle }` 重编号 |
+| `GET /library/:book/drafts` | 快照列表，新在前，带章节标题、字数、大小与时间 |
+| `POST /library/:book/drafts` | `{ chapter, body?, note? }` 存一份；`body` 省略即取章节现文 |
+| `POST /library/:book/drafts/restore` | `{ name, force? }` 退回去；内容有变先答 `409`，`force` 才覆盖 |
+| `DELETE /library/:book/drafts/:name` | 删一份快照 |
+| `GET /library/:book/progress` | 目标、总字数、今日 / 本周、连续天数、30 天历史、节奏推算 |
+| `POST /library/:book/progress` | `{ words, deadline }` 设目标（`null` 清除；日期要 `YYYY-MM-DD`） |
+| `GET /library/:book/settings` | 这本书的偏好 |
+| `POST /library/:book/settings` | `{ theme, autosave, fontSize, wordGoal }` 浅合并保存 |
+| `GET /library/:book/import` | 书里可导入的文件（`materials/`、`publish/`、`import/` 下的 md / txt / json） |
+| `POST /library/:book/import` | `{ kind: 'backup' \| 'markdown' \| 'file', … }`，**默认 `dryRun: true`** |
+
+**检索**不是全文搜索的简化版，而是把「这本书里所有能写东西的地方」都扫一遍：正文按行报位置，
+记录按字段报，素材按文件名报，原始 YAML 按整段报；同一个字段里多个词都命中才算一条，
+所以结果不会同一句话报两遍。`?section=` 可以只看一个分区。
+
+**章节顺序**是文件名的一部分，所以重排与重编号真的会改文件名——因此采用两阶段改名
+（先全部改成临时名再改成目标名），避免两个章节互换时撞名。`style` 支持 `cn`（第一章）、
+`arabic`（第1章）、`prefix`（01-）；带着编号的标题只在原标题自带序号时才跟着改，
+免得把「第一章 落幕」改成「第三章 落幕」。改完会同步平移 `progress.yaml` 里的章节键，
+**不动历史产量**，否则重命名会被记成一次亏损。
+
+**草稿箱**的存在理由是「改之前先留一份」。所以从草稿恢复时若章节已经被改过，先答 `409` 让你确认；
+确认之后它做的第一件事是**把当前正文再存成一份自动快照**，然后才写回——退一步永远可退。
+
+**进度**按每日净产出记账，而不是看文件 mtime（mtime 分不清「改了这一段」和「重写了整章」）。
+删章节是负数。没有目标时只报已有的事实；设了目标才有「每天要写多少 / 哪天写完」。
+
+**设置**存 `settings.yaml`（`theme` / `autosave` / `fontSize` / `wordGoal`），面板里改的是这几项；
+未知键原样留着，所以扩展可以往同一个文件里加自己的偏好而不被清掉。`fontSize` 是**阅读字号**：
+章节正文、AI 结果、AI 多轮记录、导出预览都跟着它走，所以「字太小」只需要改一个数字。
+
+**放大预览**给每一处文本一个整窗的读法。面板本身是别人分给它的一个窄列，长文没地方展开——
+导出预览本来就截到 4000 字、AI 结果只能在自己的小框里滚。现在 AI 结果、AI 多轮的每一轮答案、
+章节正文、素材文件、整份 YAML、记录里的长字段、导出预览旁边都有一个「⤢ 放大」按钮，点开是一层
+覆盖整个窗口的只读视图：按窗口宽度折行、滚动阅读，`Esc` 或点空白处关闭，`A－` / `A＋`（或键盘
+`+` / `-`）调字号、`恢复`回 1:1、`复制全文`拿走。字号以本书设置里的阅读字号为基准再乘一个倍数，
+倍数存在浏览器的 `localStorage`（`dsh-novel-studio.zoom`），下次打开还是这个大小。只读是刻意的：
+它是一个视图，不是第二个编辑器，不可能从这里误写回正文。
+
+## 开发
+
+```bash
+# 冒烟测试（不需要 DSH 在跑）
+node tests/library.smoke.mjs   # 57 项 · 数据层与文件夹浏览
+node tests/units.smoke.mjs     # 52 项 · 条目读写
+node tests/ops.smoke.mjs       # 99 项 · 操作层与扩展
+node tests/graph.smoke.mjs     # 80 项 · 关系图与校验
+node tests/export.smoke.mjs    # 70 项 · 导出格式与发布
+node tests/edges.smoke.mjs     # 59 项 · 关系的增删改与字段回写
+node tests/prompt.smoke.mjs    # 60 项 · 提示词装配、接地、可勾选分区的渲染与预算截断
+node tests/ai.smoke.mjs        # 198 项 · 取数、勾选、多轮历史、路由、流式回吐、篇幅要求、token 账本、调用归属、AI 扩展缝（假 llm 桩，不联网）
+node tests/extract.smoke.mjs   # 110 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、账本（假 llm 桩）
+node tests/bindings.smoke.mjs  # 23 项 · 多值字段（势力成员 / 物品持有者 / 面板归属）与多对多绑定、派生边
+node tests/model.smoke.mjs     # 46 项 · 每书独立模型：归一化、继承规则、目录归一化、路由真的进了调用
+node tests/studio.smoke.mjs    # 66 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、浏览器半边的文本契约与装载
+
+# 对运行中的 DSH 打真实 HTTP
+node tests/http.e2e.mjs        # 203 项 · 真实路由（含 /library/:book/model、/efforts、/extract、/root 与 /folders）+ 热重载
+
+# 安装到 desktop profile（本地 link）
+dsh plugin --profile desktop add link:<此目录的绝对路径>
+```
+
+安装后 `dsh.profile.bundles` 会加入 `dsh-novel-studio`，`node_modules/dsh-novel-studio` 是指回本目录的
+Junction，因此改代码不需要重新安装。
+
+## 进度
+
+- **阶段 0 · 骨架** — 完成：侧栏图标、主面板、宿主路由、热重载载体。
+- **阶段 1 · 数据层** — 完成：书库 CRUD、书架、总览真实计数。
+- **阶段 2 · 核心面板与扩展面** — 完成：声明式分区树 + 通用条目读写 + 七个分区的界面 +
+  统一操作层 + 四个 agent 工具 + 扩展目录（含模板与指南）。
+- **阶段 3 · 关系图与校验** — 完成：关系网（人物 / 势力 / 地点 / 物品 + 字段自动连边 + 上下文节点）、
+  13 条一致性规则、两个 agent 工具、两个面板标签页；`graphs` 与 `rules` 两个扩展缝。
+- **阶段 4 · 导出与发布** — 完成：四种导出格式（Markdown / 纯文本 / 单页 HTML / JSON 备份）、
+  `publish/` 产物清单与 `manifest.yaml`、面板「导出」标签、两个 agent 工具、`formats` 扩展缝。
+- **阶段 5 · 关系图手动编辑** — 完成：图里直接连线建关系、改类型 / 强度 / 备注、删边；
+  手写边写回 `relationships.yaml`，字段派生的边改写记录字段（`leader` / `region` / `owner`），
+  所以人物卡与关系图永不打架；面板加编辑开关与关系列表，新增一个 agent 工具 `novel_link`。
+- **阶段 6 · AI 联动** — 完成：四个任务（续写 / 润色 / 大纲推演 / 一致性审稿）、把书里的真实设定
+  与关系喂进提示词、`text/event-stream` 流式回吐、面板「AI」标签（可选章节 / 想法 / 原文，
+  结果可追加或替换回章节）；取数走 host 的 `llm` 与 `agentDefaultModel` 服务，两者缺席时面板
+  照常工作，只是 AI 标签会说明为什么跑不了；`ai` 扩展缝——加第五个任务是一行 `frame()`。
+- **阶段 7 · 聊天里的小说工具与多轮对话** — 完成：`novel_ai` 内建工具（`list` 任务菜单 /
+  `context` 预览会读到什么 / `run` 真跑一轮，同样吃 `pick` 与 `history`，业务拒绝以
+  `{ok:false, code, message}` 交回）；`POST /library/:book/ai` 接受 `history`（最近 12 轮、
+  每轮 4000 字符，开流前用 `400 bad-history` 校验，排在这次提示词之前交给模型）；
+  面板 AI 标签的「多轮对话」——每轮问答留档、下一轮自动带上、换书即新账、可一键清空。
+- **阶段 8 · 人物档案与每书模型** — 完成：人物卡上的「档案」按钮打开右侧抽屉，把这个人绑到任意
+  组多值归属字段（势力 `members` 与 `leader`、物品 `owner`、五个面板分组的 `owners`），一处解绑即
+  一处解绑，一张档案同时列全部已绑定处与这个人的关系连线；多值字段落成 **tags**（数组或
+  「老周、林望」这样的逗号串都读），图里每个名字各得一条 auto 边，所以一对多 / 多对一 / 多对多
+  都是同一套读写。模型方面每本书各存各的（见上文，`book.yaml.aiModel` + `GET/POST
+  /library/:book/model`），AI 标签顶部一行换书即换模型，换全局默认不影响已经选过的书；模型选择旁
+  可以再挑**思考强度**，档位跟着模型走（`GET /library/:book/efforts`），不挑就交回模型自己的默认。
+- **阶段 9 · 检索与操持** — 完成：**全库检索**（正文带行号、记录字段、文件名、原始 YAML，
+  命中即可跳到所属分区）；**导入与恢复**（JSON 备份整体回灌或恢复成新书、Markdown 按标题切章、
+  书内文件直读，默认只预览，替换整本要二次确认，旧备份里没有正文的素材会被跳过并说明）；
+  **章节重排与重编号**（两阶段改名，`cn` / `arabic` / `prefix` 三种风格，断号 / 重号 / 未编号诊断，
+  重编号时标题只在原标题自带序号时才跟着改）；**草稿箱**（改章节前留快照，恢复前自动再存一份，
+  冲突要确认）；**进度**（按每日净产出记账的 30 天历史、连续天数、目标与「哪天写完」的推算）；
+  **设置**（`settings.yaml` 的 `theme` / `autosave` / `fontSize` / `wordGoal`，未知键留给扩展）；
+  AI 结果多了一个出口——除回正文外可**存成记录**，`usage` 也显示在面板上；
+  另有五个 agent 工具（`novel_search` / `novel_chapters` / `novel_drafts` / `novel_progress` /
+  `novel_import`）与四个新面板标签。
+- **阶段 9 追加 · 用量与补材料** — 完成：**每本书一本 token 账本**（`usage.yaml`，输入 / 输出 /
+  缓存读 / 缓存写 / 合计与轮次，`GET|POST /library/:book/usage`）；面板分两层——正文下面只报**本轮
+  用量**（`done` 事件到手才显示，下一轮开始时清零），**累计**收进可折叠的子面板（展开即重读账本，
+  附轮次、起始 / 最近时间与归零）；**生成字数与
+  规定字数**（面板数字框 → `words` 参数 → 提示词「### 篇幅要求」与 `maxTokens` 抬升，正文下方
+  同时显示本轮实际字数与要求差多少）；**写回正文后补材料**（默认勾上的「顺便补材料」开关，用本书
+  模型读一遍刚写进去的那段，列出新出现的人 / 地 / 物 / 规则，默认全勾，一键补进各分区，只填空
+  字段）；另有第六个 agent 工具 `novel_extract`。
+- **阶段 9 追加 · 费用归属** — 完成：小说区的模型调用在计价插件（`dsh-cost-meter`）的账本里终于
+  有了自己的会话行——手搓调用借一个稳定 id `novel-studio:<书名>` 入账（`lib/ai.js` 的
+  `attributionId`），补材料那次调用同样归到所属书；id 会被写成 HTTP 头，只能是 Latin-1，容不下的
+  书名（中文）落到共享的 `novel-studio` 一行。
+- **阶段 9 追加 · 书库位置** — 完成：书库根目录不再只能靠环境变量钉住——面板书架底部显示当前位置
+  与来源，「更改」可直接换文件夹（可选把现有的书一起搬过去）。位置按「显式参数 → `DSH_NOVEL_ROOT`
+  → 面板保存 → 默认」解析，环境变量压过面板并让面板只读（`locked`）；换位置**下一个请求生效，
+  不用重启**；搬运用逐本 `rename`（跨盘拷贝 + 删除），撞名的书留在原处、**永不覆盖**；新位置必须
+  是绝对路径，且不能套住当前书库或落在它里面。两个新路由 `GET|POST /root`，操作层 `root`
+  （`get` / `set` / `reset`），**不加新 agent 工具**——搬书库是运维动作而不是写作动作。同一阶段
+  还补了第三个新路由 `GET /folders`：它给面板的「浏览」当**回落**——正常路径是借客户端的
+  `uiWorkspace` 服务（`ctx.get('uiWorkspace')`，可选依赖）调 `pickDirectory()`，弹出和「打开工作
+  空间」同一个系统文件夹选择框，任意磁盘都能去；这台 Host 没有那个服务时才内嵌一个只读的文件夹
+  浏览器（从「这台电脑」逐级点下去，或跳「上一级 / 磁盘 / 主目录」），选好按「用这个文件夹」填进
+  输入框，两种路径都仍要按「切换」才生效。书架本身还能收放：标题旁的箭头把它折成一条竖边，选择记
+  在浏览器的 `localStorage`（`dsh-novel-studio.shelf-folded`），**默认收起**。
+- **阶段 9 追加 · 放大预览** — 完成：文本区终于能「拿起来看」——AI 结果、AI 多轮的每一轮答案、
+  章节正文、素材文件、整份 YAML、记录里的长字段、导出预览各自多一个「⤢ 放大」按钮，点开是覆盖
+  整个窗口的只读视图（折行、滚动、`Esc` 关闭、`A－` / `A＋` 调字号、`复制全文`），倍数是「本书
+  阅读字号 × 一个存在 `localStorage` 的倍数」；同时把 `fontSize` 从「只管章节正文」扩成**阅读
+  字号**：AI 结果与导出预览都跟着它走，导出预览的框也从固定的 `340px` 改成随窗口
+  （`min(52vh, 520px)`）；小框里仍只放前 4000 字，**放大视图里是全文**。
+
+## 约定
+
+- 颜色一律走 `--dsw-alias-*` 主题令牌，字面量只作老宿主兜底；不写 `[data-theme]` 选择器。
+- 中性边框统一 `0.5px`；高层级表面用 `box-shadow: var(--dsw-elevation-*)` 且 `border: 0`。
+- 浏览器半边只能用 `require('react')` 这类裸名解析官方客户端包，**不能**写 ESM `import`。
+- 向未声明的 slot 注册会抛错，注册一律包在 `safely()` 里，坏掉的 seam 不能拖垮 `apply()`。
+- host 半边写文件一律经 `atomicWrite`（临时文件 + `rename`），不留半截文件。
+- `invoke()` 从不抛异常：业务拒绝返回 `{ ok: false, code, message }`。

@@ -1,0 +1,42 @@
+{
+  "name": "dsh-novel-studio",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Novel Studio — a dedicated writing partition for DSH: characters, worldbuilding, outline, panels, chapters.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "EXTENSIONS.md"
+  ],
+  "icon": "icon.svg",
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  }
+}
