@@ -1,7 +1,6 @@
 {
-  "name": "dsh-novel-studio",
+  "name": "dsh-novel-studio-lyjs",
   "version": "0.2.0",
-  "private": true,
   "description": "Novel Studio — a dedicated writing partition for DSH: characters, worldbuilding, outline, panels, chapters.",
   "license": "MIT",
   "type": "module",

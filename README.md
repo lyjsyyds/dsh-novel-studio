@@ -322,7 +322,10 @@ node tests/http.e2e.mjs        # 203 项 · 真实路由（含 /library/:book/mo
 dsh plugin --profile desktop add link:<此目录的绝对路径>
 ```
 
-安装后 `dsh.profile.bundles` 会加入 `dsh-novel-studio`，`node_modules/dsh-novel-studio` 是指回本目录的
+npm 包名是 **`dsh-novel-studio-lyjs`**（`dsh-novel-studio` 这个名字在 npm 上已被别人的另一个插件
+占用），GitHub 仓库名仍是 `dsh-novel-studio`。装的时候命令里写的是**目录**，所以名字差别不影响本地安装。
+
+安装后 `dsh.profile.bundles` 会加入 `dsh-novel-studio-lyjs`，`node_modules/dsh-novel-studio-lyjs` 是指回本目录的
 Junction，因此改代码不需要重新安装。
 
 ## 进度

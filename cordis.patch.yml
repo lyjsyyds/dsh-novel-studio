@@ -12,4 +12,4 @@
 #   dsh plugin --profile desktop add link:C:\Users\99610\Documents\deepseek-harness\default-workspace\dsh-novel-studio
 - insert:
     - id: novel-studio
-      name: dsh-novel-studio
+      name: dsh-novel-studio-lyjs

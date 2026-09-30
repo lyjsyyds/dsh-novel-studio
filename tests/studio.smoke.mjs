@@ -313,7 +313,7 @@ try {
   // No navigator stub: Node has one of its own, and the clipboard is only ever
   // touched by a click, which this check never makes.
   await import(url('client.js'))
-  check('client: the browser half announces itself to the loader', loaded?.id === 'dsh-novel-studio' && typeof loaded.factory === 'function')
+  check('client: the browser half announces itself to the loader', loaded?.id === 'dsh-novel-studio-lyjs' && typeof loaded.factory === 'function')
   const half = loaded.factory((name) => {
     if (name === 'react') return fakeReact
     throw new Error(`unexpected require: ${name}`)
