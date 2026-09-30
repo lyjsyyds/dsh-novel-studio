@@ -223,9 +223,20 @@ sessionId 的调用只进日 / 月合计、没有会话行**——小说区的�
 条目在几章里都出现时并成一行，先出现那一章给出的值不会被后面的覆盖，只补它没写的字段。清单同样默认
 全勾，只有点「补充到各区域」才落盘。
 
+**一次提交的正文会被切片读**：一次调用要求模型给出一份长 JSON，而长回答正是最容易坏的一种——
+回话被截断或裹上解释，整份清单就解析不出来（表现就是「模型没有按要求给出 JSON」）。所以正文按
+1200 字（`SLICE_MAX_CHARS`）切成片、每片单独问、各自拿回一小份 JSON，再合并成上面那张表。某一片
+读不懂就再问一次（`SLICE_TRIES`）；仍然读不懂时它被记成「有 N 个片段没能读懂」写在清单上方，
+**不影响其它片段**——只有所有片段都读不懂才整批报错。`plan` 上因此多了 `slices`（片数）与
+`skipped`（哪些片没读懂）。
+
+**勾选章节的抽屉里也能换模型**：抽屉顶上就是这本书的模型与思考强度表单，和「AI」标签里的是
+**同一个**组件，改一处两处同步；写回正文那一步用的也是这本书的路由。换书或换标签都不会碰到别
+的书的设置。
+
 | 路由 | 作用 |
 | --- | --- |
-| `POST /library/:book/extract` | `{ chapter?, passage }` 或 `{ chapters: [{ id, passage }] }`（一章一次调用，再合并）→ 用本书模型读出 `plan`（`entries` / `dropped` / `counts`），**不写盘** |
+| `POST /library/:book/extract` | `{ chapter?, passage }` 或 `{ chapters: [{ id, passage }] }`（一章一次调用，再合并）→ 用本书模型读出 `plan`（`entries` / `dropped` / `counts` / `slices` / `skipped`），**不写盘** |
 | `POST /library/:book/extract/apply` | `{ entries: [...] }` 把选中的条目写进各分区，返回 `written` / `updated` / `skipped` |
 
 哪些分区是候选由 schema 决定：`records` 或 `doc` 且声明了标题字段的单元，章节 / 素材 / 草稿不在其中；
@@ -319,10 +330,10 @@ node tests/export.smoke.mjs    # 70 项 · 导出格式与发布
 node tests/edges.smoke.mjs     # 59 项 · 关系的增删改与字段回写
 node tests/prompt.smoke.mjs    # 60 项 · 提示词装配、接地、可勾选分区的渲染与预算截断
 node tests/ai.smoke.mjs        # 198 项 · 取数、勾选、多轮历史、路由、流式回吐、篇幅要求、token 账本、调用归属、AI 扩展缝（假 llm 桩，不联网）
-node tests/extract.smoke.mjs   # 129 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、按章连读与合并、账本（假 llm 桩）
+node tests/extract.smoke.mjs   # 148 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、长文切片与重试、按章连读与合并、账本（假 llm 桩）
 node tests/bindings.smoke.mjs  # 23 项 · 多值字段（势力成员 / 物品持有者 / 面板归属）与多对多绑定、派生边
 node tests/model.smoke.mjs     # 46 项 · 每书独立模型：归一化、继承规则、目录归一化、路由真的进了调用
-node tests/studio.smoke.mjs    # 69 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、浏览器半边的文本契约与装载
+node tests/studio.smoke.mjs    # 74 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、浏览器半边的文本契约与装载
 
 # 对运行中的 DSH 打真实 HTTP
 node tests/http.e2e.mjs        # 207 项 · 真实路由（含 /library/:book/model、/efforts、/extract（单段与按章）、/root 与 /folders）+ 热重载
@@ -366,6 +377,7 @@ Junction，因此改代码不需要重新安装。
   都是同一套读写。模型方面每本书各存各的（见上文，`book.yaml.aiModel` + `GET/POST
   /library/:book/model`），AI 标签顶部一行换书即换模型，换全局默认不影响已经选过的书；模型选择旁
   可以再挑**思考强度**，档位跟着模型走（`GET /library/:book/efforts`），不挑就交回模型自己的默认。
+  这张表单是 `ModelForm`，AI 标签与「识别材料」的勾选抽屉共用同一个，两处永远一致。
 - **阶段 9 · 检索与操持** — 完成：**全库检索**（正文带行号、记录字段、文件名、原始 YAML，
   命中即可跳到所属分区）；**导入与恢复**（JSON 备份整体回灌或恢复成新书、Markdown 按标题切章、
   书内文件直读，默认只预览，替换整本要二次确认，旧备份里没有正文的素材会被跳过并说明）；

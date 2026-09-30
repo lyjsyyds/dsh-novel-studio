@@ -290,6 +290,11 @@ try {
   check('client: the chapter pane reads the chapters the author ticks', (clientText.match(/h\(ExtractPicker, \{/g) || []).length === 1)
   check('client: both entry points share the one review drawer', (clientText.match(/h\(ExtractBox, \{/g) || []).length === 2)
   check('client: a ticked batch is sent as one list, not one request per chapter', clientText.includes('{ chapters: passages }'))
+  check('client: the AI tab and the reading drawer share one model form', (clientText.match(/function ModelForm\(/g) || []).length === 1)
+  check('client: that form is mounted in both places', (clientText.match(/h\(ModelForm, \{/g) || []).length === 2)
+  check('client: only the shared form reads or writes a book’s route', (clientText.match(/\/model`/g) || []).length === 2)
+  check('client: the AI tab kept no second copy of the picker', !clientText.includes('setModelOpen'))
+  check('client: a slice that could not be read is reported', clientText.includes("t('aiExtractMissed')"))
   const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
   const missingCss = zoomClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
 

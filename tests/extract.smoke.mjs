@@ -308,18 +308,122 @@ try {
   check('the pass is billed to the book', ledger.runs === 1, ledger)
   check('the pass adds its tokens', ledger.input === 500 && ledger.output === 80 && ledger.total === 580, ledger)
 
+  // ── splitting: long prose becomes short questions ─────────────────────
+  check('splitPassage: a short passage is one slice', JSON.stringify(extract.splitPassage('正文')) === '["正文"]')
+  check('splitPassage: an empty passage is no slice', extract.splitPassage('   ').length === 0)
+  check('splitPassage: blank lines alone are no slice', extract.splitPassage('\n\n  \n').length === 0)
+
+  const wall = '字'.repeat(3000)
+  const wallSlices = extract.splitPassage(wall, 400)
+  check(
+    'splitPassage: a wall with no break is cut at the limit',
+    wallSlices.length === 8 && wallSlices.every((s) => s.length <= 400),
+    wallSlices.map((s) => s.length),
+  )
+  check('splitPassage: the slices keep the whole wall', wallSlices.join('') === wall, wallSlices.join('').length)
+
+  const prose = `${'甲。'.repeat(700)}\n\n${'乙。'.repeat(700)}`
+  const proseSlices = extract.splitPassage(prose)
+  check(
+    'splitPassage: every slice stays inside the limit',
+    proseSlices.length > 1 && proseSlices.every((s) => s.length <= extract.SLICE_MAX_CHARS),
+    proseSlices.map((s) => s.length),
+  )
+  check('splitPassage: a sentence end is a cut', proseSlices[0].endsWith('甲。'), proseSlices[0].slice(-6))
+  check(
+    'splitPassage: nothing is dropped between the slices',
+    proseSlices.join('').replace(/\s+/g, '') === prose.replace(/\s+/g, ''),
+    { kept: proseSlices.join('').length, raw: prose.length },
+  )
+
+  // A whole chapter in one call asks for a long JSON answer, and a long answer
+  // is what the model loses; slices keep every answer short enough to parse.
   const long = '正文'.repeat(6000)
   const longSeen = []
-  await extract.recognizeExtract({
-    llm: fakeLlm([TEXT('{"entries":[]}'), { type: 'finish', reason: { kind: 'stop' } }], longSeen),
+  const oneEntry = JSON.stringify({ entries: [{ target: 'world/items', name: '灯芯砂', fields: { type: '材料' } }] })
+  const longRun = await extract.recognizeExtract({
+    llm: fakeLlm(
+      [TEXT(oneEntry), { type: 'usage', usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }, { type: 'finish', reason: { kind: 'stop' } }],
+      longSeen,
+    ),
     selection: () => ({ provider: 'harness', model: 'default-model' }),
     bookDir,
     book: {},
+    chapter: '长章',
     passage: long,
   })
-  const sent = String(longSeen[0].messages[0].content[0].text)
-  check('an over-long passage is cut before it is sent', sent.length < long.length, { sent: sent.length, raw: long.length })
-  check('the cut is announced to the model', sent.includes('只保留前'), sent.slice(-80))
+  check(
+    'a long passage is sent as several slices',
+    longSeen.length > 1 && longSeen.length === longRun.plan.slices,
+    { calls: longSeen.length, slices: longRun.plan.slices },
+  )
+  check(
+    'no single call carries the whole passage',
+    longSeen.every((o) => String(o.messages[0].content[0].text).length < long.length),
+    longSeen.map((o) => String(o.messages[0].content[0].text).length),
+  )
+  check('every slice was read', longRun.plan.skipped.length === 0, longRun.plan.skipped)
+  check('the same name from every slice is one row', longRun.plan.entries.length === 1, longRun.plan.entries.map((e) => e.name))
+  check('the merged row names the chapter once', JSON.stringify(longRun.plan.entries[0].from) === '["长章"]', longRun.plan.entries[0].from)
+  check('the plan names the chapter it read', longRun.plan.chapter === '长章')
+  check('the slices add up their usage', longRun.usage.totalTokens === 15 * longSeen.length, longRun.usage)
+
+  // One slice the model answers with prose is asked again; if it still will not
+  // answer, it is named as unread instead of failing the whole chapter.
+  const mixed = `MARK-OK。${'字'.repeat(1300)}。尾`
+  const mixedSeen = []
+  const mixedRun = await extract.recognizeExtract({
+    llm: {
+      stream(options) {
+        mixedSeen.push(options)
+        const sent = String(options.messages?.[0]?.content?.[0]?.text || '')
+        const good = sent.includes('MARK-OK')
+        return (async function* () {
+          yield TEXT(good ? oneEntry : '这一片我读不出来。')
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        })()
+      },
+    },
+    selection: () => ({ provider: 'harness', model: 'default-model' }),
+    bookDir,
+    book: {},
+    chapter: '混合章',
+    passage: mixed,
+  })
+  check('an unreadable slice is asked again', mixedSeen.length === 3, mixedSeen.length)
+  check('the readable slice still comes back', mixedRun.plan.entries.length === 1, mixedRun.plan.entries.map((e) => e.name))
+  check(
+    'an unreadable slice is named, not fatal',
+    mixedRun.plan.skipped.length === 1 && mixedRun.plan.skipped[0].slice === 2,
+    mixedRun.plan.skipped,
+  )
+  check('the plan still counts every slice', mixedRun.plan.slices === 2, mixedRun.plan.slices)
+
+  const proseSeen = []
+  await rejectsWith(
+    'a passage no slice of which can be read still refuses',
+    async () =>
+      extract.recognizeExtract({
+        llm: {
+          stream(options) {
+            proseSeen.push(options)
+            return (async function* () {
+              yield TEXT('我读不出来。')
+              yield { type: 'finish', reason: { kind: 'stop' } }
+            })()
+          },
+        },
+        selection: () => ({ provider: 'p', model: 'm' }),
+        bookDir,
+        passage: wall,
+      }),
+    'bad-extract-answer',
+  )
+  check(
+    'an unreadable passage is retried slice by slice',
+    proseSeen.length === extract.SLICE_TRIES * extract.splitPassage(wall).length,
+    { calls: proseSeen.length, slices: extract.splitPassage(wall).length },
+  )
 
   await rejectsWith('an empty passage is refused', async () => extract.recognizeExtract({ llm, selection: () => ({ provider: 'p', model: 'm' }), bookDir, passage: '   ' }), 'missing-argument')
   await rejectsWith('no llm is refused', async () => extract.recognizeExtract({ llm: null, selection: () => ({ provider: 'p', model: 'm' }), bookDir, passage: '有正文' }), 'no-llm')
