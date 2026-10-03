@@ -306,6 +306,52 @@ try {
   check('client: the answer can be filed as a chapter of its own', clientText.includes("{ value: 'newchapter' }"))
   check('client: a new chapter is written through the unit route', clientText.includes('unit/chapters`, { title, body: text }'))
   check('client: the next chapter name is guessed from the book', (clientText.match(/nextChapterTitle\(/g) || []).length >= 3)
+  check(
+    'client: the graph can be zoomed',
+    clientText.includes("'data-graph-zoom': 'in'") &&
+      clientText.includes("'data-graph-zoom': 'out'") &&
+      clientText.includes("'data-graph-zoom': 'pct'") &&
+      clientText.includes('width: `${zoom * 100}%`'),
+  )
+  check('client: graph zoom stays between half and four times', /Math\.min\(4, Math\.max\(0\.5,/.test(clientText))
+  check(
+    'client: ctrl+wheel zooms the graph without zooming the page',
+    clientText.includes("addEventListener('wheel', onWheel, { passive: false })") &&
+      clientText.includes('if (!ev.ctrlKey && !ev.metaKey) return'),
+  )
+  check(
+    'client: dragging the graph pans it instead of picking nodes',
+    clientText.includes('if (dragged.current) { dragged.current = false; return }') &&
+      clientText.includes('el.scrollLeft = p.left - dx'),
+  )
+  check('client: the graph frame scrolls', /\.ns-graph-wrap\{[^}]*overflow:auto/.test(clientText))
+  check(
+    'client: the shelf can move a book into the recycle bin',
+    clientText.includes("className: 'ns-book-del'") &&
+      clientText.includes("call('DELETE', `/library/${enc(b.id)}`)") &&
+      clientText.includes("t('bookTrashAsk')"),
+  )
+  check(
+    'client: the recycle bin restores and purges',
+    clientText.includes("call('POST', `/trash/${enc(e.id)}/restore`)") &&
+      clientText.includes("call('DELETE', `/trash/${enc(e.id)}`)") &&
+      clientText.includes("call('GET', '/trash')"),
+  )
+  check(
+    'client: the bin is its own partition on the shelf',
+    clientText.includes("t('shelfTrash')") &&
+      clientText.includes("'data-open': trashOpen ? '1' : '0'") &&
+      clientText.includes("className: 'ns-trash-row'"),
+  )
+  check('client: deleting the open book closes it', clientText.includes('if (selected === b.id) await onPick(null)'))
+  check(
+    'client: both faces of the shelf are bilingual',
+    clientText.includes("bookTrashAsk: '把《{n}》移入回收站？") &&
+      clientText.includes("bookTrashAsk: 'Move \"{n}\" to the recycle bin?"),
+  )
+  const trashClasses = ['ns-book-row', 'ns-book-del', 'ns-trash-row', 'ns-trash-info', 'ns-trash-name', 'ns-trash-when', 'ns-trash-acts', 'ns-trash-open']
+  const missingTrashCss = trashClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: recycle bin CSS is in place', missingTrashCss.length === 0, missingTrashCss.join(','))
   const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
   const missingCss = zoomClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
 

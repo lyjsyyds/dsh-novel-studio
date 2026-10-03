@@ -164,8 +164,11 @@ try {
   const stray = (await readdir(book.dir)).filter((n) => n.includes('.tmp-'))
   check('no temp files left behind', stray.length === 0, stray.join(','))
 
-  await deleteBook(root, book.id)
-  check('book removed', (await readdir(root)).length === 0)
+  const binned = await deleteBook(root, book.id)
+  const top = await readdir(root)
+  check('book removed from the shelf', !top.includes(book.id), top.join(','))
+  check('deletion lands in the recycle bin', !!(binned && binned.trashed) && top.includes('.trash') &&
+    (await readdir(join(root, '.trash'))).length === 1, JSON.stringify(binned))
 } finally {
   await rm(root, { recursive: true, force: true })
 }

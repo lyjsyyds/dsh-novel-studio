@@ -72,10 +72,34 @@ try {
   const bad = await lib.readBook(root, '../etc').then(() => null, (e) => e)
   check('path traversal rejected', bad && bad.status === 400, bad && bad.message)
 
-  // delete
+  // delete — a book leaves the shelf but waits in the recycle bin
   await lib.deleteBook(root, b.id)
   check('delete removes dir', !(await stat(join(root, b.id)).catch(() => null)))
   check('delete leaves others', (await lib.listBooks(root)).length === 2)
+  const bin = await lib.listTrash(root)
+  check('delete lands in recycle bin', bin.length === 1 && bin[0].id.startsWith(`${b.id}__ts`) && !!bin[0].deletedAt, JSON.stringify(bin))
+  check('bin entry carries the original name', bin[0] && bin[0].name === b.id, JSON.stringify(bin[0]))
+  check('the bin is not listed as a book', !(await lib.listBooks(root)).some((x) => x.id === '.trash'))
+  const badEntry = await lib.purgeTrash(root, '.hack').then(() => null, (e) => e)
+  check('bad recycle entry rejected', badEntry && badEntry.status === 400, badEntry && badEntry.message)
+  const ghost = await lib.restoreTrash(root, 'ghost__ts1').then(() => null, (e) => e)
+  check('unknown recycle entry 404', ghost && ghost.status === 404, ghost && ghost.message)
+
+  // the id was taken again while the book waited in the bin
+  await mkdir(join(root, b.id), { recursive: true })
+  const restored = await lib.restoreTrash(root, bin[0].id)
+  check('restore onto a taken id lands beside it', restored.restored && restored.id === `${b.id}-2`, JSON.stringify(restored))
+  check('restored book is back on disk', !!(await stat(join(root, restored.id)).catch(() => null)))
+  check('restored book.yaml id follows the folder', (await lib.readBook(root, restored.id)).id === restored.id)
+  await rm(join(root, b.id), { recursive: true, force: true })
+
+  // purge for good
+  await lib.deleteBook(root, restored.id)
+  const bin2 = await lib.listTrash(root)
+  check('second delete lands in bin', bin2.length === 1 && bin2[0].name === restored.id, JSON.stringify(bin2))
+  const purged = await lib.purgeTrash(root, bin2[0].id)
+  check('purge destroys the book', purged.purged && !(await readdir(join(root, '.trash'))).length, JSON.stringify(purged))
+  check('purge leaves others', (await lib.listBooks(root)).length === 2)
 
   // unknown book
   const missing = await lib.readBook(root, 'no-such-book').then(() => null, (e) => e)

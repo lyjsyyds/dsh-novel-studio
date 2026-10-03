@@ -506,15 +506,50 @@ try {
   }
   check('reverting api.js takes effect too', (await req('GET', '/ping')).data?.stage === 9)
 
-  // ── delete ──────────────────────────────────────────────────────────────
+  // ── delete: the book goes to the recycle bin, not the void ─────────────
   const del = await req('DELETE', `/library/${enc}`)
   check('DELETE 200', del.status === 200, `status=${del.status}`)
   created = false
   check('deleted book is gone', (await req('GET', `/library/${enc}`)).status === 404)
   check('shelf no longer lists it', !((await req('GET', '/library')).data?.books || []).some((b) => b.id === id))
+
+  // the bin holds it now — listed, dated, and still invisible as a book
+  const bin = await req('GET', '/trash')
+  const binnedEntry = ((bin.data?.entries || []).find((e) => e.name === id)) || null
+  if (!binnedEntry) throw new Error(`expected ${id} in the recycle bin, got ${JSON.stringify(bin.data)}`)
+  check('DELETE lands in the recycle bin', bin.status === 200 && !!binnedEntry.deletedAt, JSON.stringify(bin.data))
+  check('the bin is not a book', !((await req('GET', '/library')).data?.books || []).some((b) => b.id === '.trash'))
+
+  // guards on entry names: nothing outside .trash, nothing imaginary
+  const badPurge = await req('DELETE', '/trash/.hack')
+  check('bad bin entry 400', badPurge.status === 400, `status=${badPurge.status}`)
+  const ghostRestore = await req('POST', '/trash/ghost__ts1/restore', {})
+  check('unknown bin entry 404', ghostRestore.status === 404, `status=${ghostRestore.status}`)
+
+  // restore puts it back on the shelf, readable under its own id
+  const back = await req('POST', `/trash/${encodeURIComponent(binnedEntry.id)}/restore`, {})
+  check('restore 200', back.status === 200 && back.data?.restored === true, JSON.stringify(back.data))
+  created = true
+  check('restored book readable', (await req('GET', `/library/${enc}`)).status === 200)
+  check('restored book listed again', ((await req('GET', '/library')).data?.books || []).some((b) => b.id === id))
+
+  // delete once more, then this time purge for good
+  const del2 = await req('DELETE', `/library/${enc}`)
+  check('second DELETE 200', del2.status === 200, `status=${del2.status}`)
+  created = false
+  const bin2 = await req('GET', '/trash')
+  const binnedEntry2 = ((bin2.data?.entries || []).find((e) => e.name === id)) || null
+  if (!binnedEntry2) throw new Error(`expected ${id} back in the recycle bin, got ${JSON.stringify(bin2.data)}`)
+  const purge = await req('DELETE', `/trash/${encodeURIComponent(binnedEntry2.id)}`)
+  check('purge 200', purge.status === 200 && purge.data?.purged === true, JSON.stringify(purge.data))
+  check('purged book gone', (await req('GET', `/library/${enc}`)).status === 404)
+  check('the bin lets go of it', !((await req('GET', '/trash')).data?.entries || []).some((e) => e.name === id))
 } finally {
   // Never leave test data behind, even when a check threw.
   if (created && id) await req('DELETE', `/library/${encodeURIComponent(id)}`).catch(() => {})
+  const leftover = await req('GET', '/trash').catch(() => null)
+  const binned = leftover?.data?.entries?.find((e) => e.name === id)
+  if (binned) await req('DELETE', `/trash/${encodeURIComponent(binned.id)}`).catch(() => {})
 }
 
 console.log(log.join('\n'))

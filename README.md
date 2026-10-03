@@ -16,7 +16,9 @@
 
 **关系图**把人物、势力、地点、物品画成一张网：名字旁边的字段（势力的 `leader`、地点的 `region`、
 物品的 `owner`）会自动连边，手写的边存在 `relationships.yaml` 里。只看人物时，各人所属的势力仍会
-作为灰色上下文节点画出来，所以不会看到一堆孤立的点。
+作为灰色上下文节点画出来，所以不会看到一堆孤立的点。整张图**可以缩放**（图框顶上的 － / 百分比 /
+＋，或 `Ctrl/Cmd + 滚轮`，0.5×–4×），图比框大时**拖拽就能平移**（按住空白处拖，点节点仍然选中），
+框架自己滚动。
 
 **校验**跑一遍书的内部一致性：悬空的边、指向未知条目的 `[[链接]]`、重号或断号的章节、还没回收的
 伏笔、空分区等等，分「错误 / 提醒 / 提示」三档列出来。它**只读**，不会改任何文件。
@@ -32,6 +34,13 @@ JSON 备份（含所有分区数据与素材正文，且不含本地路径）。
 
 **草稿箱**在改章节之前先留快照，改坏了能退回去；从草稿恢复时会先自动存一份「恢复前的样子」，
 所以退回一步本身也是可退的。
+
+**回收站**是书架上「删除」所去的地方。书条目悬停出现 🗑，点一下把这本书**移进回收站**——只是把它
+改名挪进书库根目录的 `.trash/`，字节一个不动，书架随即不再列出它；删的正好是当前打开的书，面板就
+空出来，不会去请求一个不存在的书。书架底部「回收站 (N)」切到**回收分区**：里面按删除时间列出被删
+的书，「恢复」放回书架（原名在这期间被占用，就和新建一样拿 `-2`、`-3`……，并且 `book.yaml` 里的
+`id` 跟着文件夹改），「永久删除」才真的从磁盘上抹掉、还要求再确认一次。`.trash` 是点目录，而书架
+的列表本来就跳过点目录——所以回收站永远不会被当成一本书，整个书库搬家时它也随行。
 
 它同时是一块**留给 AI 继续加东西的地盘**：新分区、新路由、新工具都是 `lib/extensions/` 下的一个
 `.js` 文件，写完下一个请求就生效。见 [EXTENSIONS.md](EXTENSIONS.md)。
@@ -296,6 +305,10 @@ sessionId 的调用只进日 / 月合计、没有会话行**——小说区的�
 | `POST /library/:book/settings` | `{ theme, autosave, fontSize, wordGoal }` 浅合并保存 |
 | `GET /library/:book/import` | 书里可导入的文件（`materials/`、`publish/`、`import/` 下的 md / txt / json） |
 | `POST /library/:book/import` | `{ kind: 'backup' \| 'markdown' \| 'file', … }`，**默认 `dryRun: true`** |
+| `DELETE /library/:book` | 把书**移入回收站**（改名进 `.trash/`，不销毁） |
+| `GET /trash` | 回收站条目（`id` 是文件夹名、`name` 是原书名、`deletedAt` 删除时间），新在前 |
+| `POST /trash/:entry/restore` | 恢复到书架；原名被占时拿 `-2` 后缀并同步改 `book.yaml` 的 `id` |
+| `DELETE /trash/:entry` | 永久删除，不可撤销；`entry` 必须长得像 `<原名>__ts<时间戳>` |
 
 **检索**不是全文搜索的简化版，而是把「这本书里所有能写东西的地方」都扫一遍：正文按行报位置，
 记录按字段报，素材按文件名报，原始 YAML 按整段报；同一个字段里多个词都命中才算一条，
@@ -332,8 +345,8 @@ sessionId 的调用只进日 / 月合计、没有会话行**——小说区的�
 npm test
 
 # 冒烟测试（不需要 DSH 在跑）
-node tests/library.smoke.mjs   # 57 项 · 数据层与文件夹浏览
-node tests/units.smoke.mjs     # 52 项 · 条目读写
+node tests/library.smoke.mjs   # 68 项 · 数据层、文件夹浏览与回收站
+node tests/units.smoke.mjs     # 53 项 · 条目读写
 node tests/ops.smoke.mjs       # 99 项 · 操作层与扩展
 node tests/graph.smoke.mjs     # 80 项 · 关系图与校验
 node tests/export.smoke.mjs    # 70 项 · 导出格式与发布
@@ -343,10 +356,10 @@ node tests/ai.smoke.mjs        # 198 项 · 取数、勾选、多轮历史、路
 node tests/extract.smoke.mjs   # 148 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、长文切片与重试、按章连读与合并、账本（假 llm 桩）
 node tests/bindings.smoke.mjs  # 23 项 · 多值字段（势力成员 / 物品持有者 / 面板归属）与多对多绑定、派生边
 node tests/model.smoke.mjs     # 46 项 · 每书独立模型：归一化、继承规则、目录归一化、路由真的进了调用
-node tests/studio.smoke.mjs    # 79 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、浏览器半边的文本契约与装载
+node tests/studio.smoke.mjs    # 90 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、关系图与回收站的浏览器半边文本契约与装载
 
 # 对运行中的 DSH 打真实 HTTP
-node tests/http.e2e.mjs        # 207 项 · 真实路由（含 /library/:book/model、/efforts、/extract（单段与按章）、/root 与 /folders）+ 热重载
+node tests/http.e2e.mjs        # 218 项 · 真实路由（含 /library/:book/model、/efforts、/extract（单段与按章）、/root 与 /folders、/trash 回收站全流程）+ 热重载
 
 # 安装到 desktop profile（本地 link）
 dsh plugin --profile desktop add link:<此目录的绝对路径>
@@ -428,6 +441,18 @@ Junction，因此改代码不需要重新安装。
   阅读字号 × 一个存在 `localStorage` 的倍数」；同时把 `fontSize` 从「只管章节正文」扩成**阅读
   字号**：AI 结果与导出预览都跟着它走，导出预览的框也从固定的 `340px` 改成随窗口
   （`min(52vh, 520px)`）；小框里仍只放前 4000 字，**放大视图里是全文**。
+- **阶段 9 追加 · 关系图缩放** — 完成：关系图从「固定 100% 画布」变成可缩放视口——缩放就是把 svg
+  的宽度设成 `zoom×100%`，`.ns-graph-wrap` 转成 `overflow:auto`，平移借原生滚动条，零坐标换算；
+  缩放条（－ / 百分比点击复位 / ＋）放在滚动框**之外**，`Ctrl/Cmd + 滚轮`每格 ×1.15（`passive:false`
+  的原生监听，滚轮不再顺手滚面板），指针拖拽平移（位移超过 4px 就吞掉，不会误选节点），倍数夹在
+  0.5×–4×；统计行随内容一起留在框外。
+- **阶段 9 追加 · 回收站** — 完成：删书从 `rm -rf` 改成**改名进 `<书库>/.trash/<原名>__ts<时间戳>`**
+  （同卷 `rename`，字节一个不动），三个新路由 `GET /trash`、`POST /trash/:entry/restore`、
+  `DELETE /trash/:entry` 住在**顶层**而不是 `/library/…` 下——书本的 id 可以恰好叫 `trash`，功能名
+  不能占它的位。恢复时若原名已被占用就拿 `-2` 后缀（和新建同规则），并同步改 `book.yaml` 里的 `id`
+  （`readBook` 让存着的 id 压过文件夹名，不同步的话下一个请求就 404）。书架每行悬停出 🗑、底部出
+  「回收站 (N)」切换按钮，回收分区里恢复 / 永久删除两个动作，删当前打开的书会顺手把它关掉；`.trash`
+  是点目录，列表天然看不见它，搬书库时随行。
 
 ## 约定
 
