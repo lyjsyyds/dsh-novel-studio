@@ -42,6 +42,12 @@ JSON 备份（含所有分区数据与素材正文，且不含本地路径）。
 `id` 跟着文件夹改），「永久删除」才真的从磁盘上抹掉、还要求再确认一次。`.trash` 是点目录，而书架
 的列表本来就跳过点目录——所以回收站永远不会被当成一本书，整个书库搬家时它也随行。
 
+**网站接口**在右侧空着的面板里：把你常去的**上架后台**收成一排卡片，开几个平台就放几条，点卡片
+在浏览器里新开标签（`window.open` + `noopener`，后台页面摸不回来这边），✎ 编辑、🗑 删除（要确认）。
+列表**整表**存在配置文件里（和书库位置同一份 `~/.dsh/novel-studio.yaml`），所以清浏览器数据也不会丢，
+保存失败时原表原样保留。卡片栅格是 `auto-fill`——**书架折起来右区变宽，就自动多一列**，跟着书架
+一起伸缩；网址只收 `http://` / `https://`，`javascript:` 之类一律拒收。
+
 它同时是一块**留给 AI 继续加东西的地盘**：新分区、新路由、新工具都是 `lib/extensions/` 下的一个
 `.js` 文件，写完下一个请求就生效。见 [EXTENSIONS.md](EXTENSIONS.md)。
 
@@ -94,7 +100,7 @@ JSON 备份（含所有分区数据与素材正文，且不含本地路径）。
 | 文件 | 半边 | 作用 |
 | --- | --- | --- |
 | `lib/index.js` | host | 稳定载体：注册前缀路由 + agent 工具，**递归**按 mtime 热重载 `lib/` 下所有 `.js` |
-| `lib/api.js` | host | HTTP 路由分发（`/ping`、`/bootstrap`、`/schema`、`/root`、`/folders`、`/library[...]`、`/ext/...`） |
+| `lib/api.js` | host | HTTP 路由分发（`/ping`、`/bootstrap`、`/schema`、`/root`、`/folders`、`/websites`、`/trash`、`/library[...]`、`/ext/...`） |
 | `lib/ops.js` | host | **统一操作层**：`invoke(operation, payload)`，HTTP / 工具 / 扩展共用，从不抛异常 |
 | `lib/library.js` | host | 数据层：书库扫描、建书脚手架、原子写、计数、增删改查 |
 | `lib/schema.js` | host | 声明式分区树（六种 kind）+ 扩展发现与合并 |
@@ -309,6 +315,8 @@ sessionId 的调用只进日 / 月合计、没有会话行**——小说区的�
 | `GET /trash` | 回收站条目（`id` 是文件夹名、`name` 是原书名、`deletedAt` 删除时间），新在前 |
 | `POST /trash/:entry/restore` | 恢复到书架；原名被占时拿 `-2` 后缀并同步改 `book.yaml` 的 `id` |
 | `DELETE /trash/:entry` | 永久删除，不可撤销；`entry` 必须长得像 `<原名>__ts<时间戳>` |
+| `GET /websites` | 面板空态的「网站接口」列表（`[{ name, url }]`），存配置文件；写坏的条目读时直接丢弃 |
+| `POST /websites` | `{ items: [...] }` **整表替换**；非 `http(s)` 网址、缺名、超量（>100）都是 `400 bad-websites` |
 
 **检索**不是全文搜索的简化版，而是把「这本书里所有能写东西的地方」都扫一遍：正文按行报位置，
 记录按字段报，素材按文件名报，原始 YAML 按整段报；同一个字段里多个词都命中才算一条，
@@ -345,7 +353,7 @@ sessionId 的调用只进日 / 月合计、没有会话行**——小说区的�
 npm test
 
 # 冒烟测试（不需要 DSH 在跑）
-node tests/library.smoke.mjs   # 68 项 · 数据层、文件夹浏览与回收站
+node tests/library.smoke.mjs   # 80 项 · 数据层、文件夹浏览、回收站与网站接口
 node tests/units.smoke.mjs     # 53 项 · 条目读写
 node tests/ops.smoke.mjs       # 99 项 · 操作层与扩展
 node tests/graph.smoke.mjs     # 80 项 · 关系图与校验
@@ -356,10 +364,10 @@ node tests/ai.smoke.mjs        # 198 项 · 取数、勾选、多轮历史、路
 node tests/extract.smoke.mjs   # 148 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、长文切片与重试、按章连读与合并、账本（假 llm 桩）
 node tests/bindings.smoke.mjs  # 23 项 · 多值字段（势力成员 / 物品持有者 / 面板归属）与多对多绑定、派生边
 node tests/model.smoke.mjs     # 46 项 · 每书独立模型：归一化、继承规则、目录归一化、路由真的进了调用
-node tests/studio.smoke.mjs    # 90 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、关系图与回收站的浏览器半边文本契约与装载
+node tests/studio.smoke.mjs    # 97 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、关系图、回收站与网站接口的浏览器半边文本契约与装载
 
 # 对运行中的 DSH 打真实 HTTP
-node tests/http.e2e.mjs        # 218 项 · 真实路由（含 /library/:book/model、/efforts、/extract（单段与按章）、/root 与 /folders、/trash 回收站全流程）+ 热重载
+node tests/http.e2e.mjs        # 226 项 · 真实路由（含 /library/:book/model、/efforts、/extract（单段与按章）、/root 与 /folders、/trash 回收站全流程、/websites 网站接口）+ 热重载
 
 # 安装到 desktop profile（本地 link）
 dsh plugin --profile desktop add link:<此目录的绝对路径>
@@ -453,6 +461,12 @@ Junction，因此改代码不需要重新安装。
   （`readBook` 让存着的 id 压过文件夹名，不同步的话下一个请求就 404）。书架每行悬停出 🗑、底部出
   「回收站 (N)」切换按钮，回收分区里恢复 / 永久删除两个动作，删当前打开的书会顺手把它关掉；`.trash`
   是点目录，列表天然看不见它，搬书库时随行。
+- **阶段 9 追加 · 网站接口** — 完成：右侧空面板变成**上架后台的发射台**——多条可自定义网址的卡片
+  （每个小说平台各占一张），点一下 `window.open(url, '_blank', 'noopener,noreferrer')` 到浏览器；
+  两个新顶层路由 `GET /websites` / `POST /websites`（**整表替换**，`400 bad-websites` 拒非 `http(s)`
+  网址、缺名与超 100 条）。列表存进配置文件（和书库位置同居 `~/.dsh/novel-studio.yaml`），清浏览器
+  数据不丢、保存失败原表保留；栅格 `repeat(auto-fill, minmax(174px, 1fr))`——书架折起右区变宽就
+  自动多一列，**随书架一起缩放**。测试 library 80 / studio 97 / e2e 226。
 
 ## 约定
 

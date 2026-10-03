@@ -38,6 +38,7 @@ const stamp = Date.now().toString(36)
 const title = `e2e-${stamp}`
 let id = ''
 let created = false
+let origSites = null // the writer's real website list, restored in the finally
 
 try {
   // ── carrier ─────────────────────────────────────────────────────────────
@@ -486,6 +487,36 @@ try {
   check('a plain file is refused too 400', notAFolder.status === 400 && notAFolder.data?.code === 'bad-path', notAFolder.data)
   check('POST /folders 405', (await req('POST', '/folders', {})).status === 405)
 
+  // ── website shortcuts: the panel's saved backends ───────────────────────
+  // The one section here that writes to the config file. The whole list is
+  // captured first and put back in the finally below, so a writer's shortcuts
+  // are exactly as they were once the suite ends.
+  const sites0 = await req('GET', '/websites')
+  check('GET /websites 200', sites0.status === 200 && Array.isArray(sites0.data?.items), `status=${sites0.status}`)
+  origSites = sites0.data?.items || []
+
+  const saveSites = await req('POST', '/websites', {
+    items: [
+      { name: 'e2e-起点后台', url: 'https://admin.qidian.example/console' },
+      { name: 'e2e-番茄', url: 'http://fanqie.example/manage' },
+    ],
+  })
+  check('POST /websites saves the list',
+    saveSites.status === 200 && saveSites.data?.items?.length === 2, saveSites.data)
+  const sitesBack = await req('GET', '/websites')
+  check('the saved list reads back',
+    JSON.stringify(sitesBack.data?.items) === JSON.stringify(saveSites.data?.items), sitesBack.data)
+
+  const badUrl = await req('POST', '/websites', { items: [{ name: 'x', url: 'javascript:alert(1)' }] })
+  check('a non-http URL is refused 400', badUrl.status === 400 && badUrl.data?.code === 'bad-websites', badUrl.data)
+  const badItems = await req('POST', '/websites', { items: 'nope' })
+  check('a non-array is refused 400', badItems.status === 400 && badItems.data?.code === 'bad-websites', badItems.data)
+  const stillSaved = await req('GET', '/websites')
+  check('a refusal changes nothing',
+    JSON.stringify(stillSaved.data?.items) === JSON.stringify(saveSites.data?.items), stillSaved.data)
+  check('PUT /websites 405', (await req('PUT', '/websites', {})).status === 405)
+  check('a route under /websites is not found', (await req('GET', '/websites/extra')).status === 404)
+
   // ── guards ──────────────────────────────────────────────────────────────
   const traversal = await req('GET', '/library/..%2F..%2Fetc')
   check('path traversal rejected 400', traversal.status === 400, `status=${traversal.status}`)
@@ -550,6 +581,7 @@ try {
   const leftover = await req('GET', '/trash').catch(() => null)
   const binned = leftover?.data?.entries?.find((e) => e.name === id)
   if (binned) await req('DELETE', `/trash/${encodeURIComponent(binned.id)}`).catch(() => {})
+  if (origSites) await req('POST', '/websites', { items: origSites }).catch(() => {})
 }
 
 console.log(log.join('\n'))

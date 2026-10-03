@@ -206,6 +206,50 @@ try {
     check('on Windows that place is the drives',
       process.platform !== 'win32' || top.items.every((it) => /^[A-Z]:\\$/.test(it.path)),
       JSON.stringify(top.items.map((it) => it.path)))
+
+    // ── website shortcuts (the empty pane's launchpad) ──────────────────
+    const startSites = await lib.listWebsites()
+    check('websites start empty', Array.isArray(startSites) && startSites.length === 0, JSON.stringify(startSites))
+
+    const savedSites = await lib.saveWebsites([
+      { name: '  起点后台  ', url: '  https://admin.qidian.example  ' },
+      { name: '番茄', url: 'http://fanqie.example/console' },
+    ])
+    check('saveWebsites returns trimmed items',
+      savedSites.length === 2 && savedSites[0].name === '起点后台' && savedSites[0].url === 'https://admin.qidian.example',
+      JSON.stringify(savedSites))
+    const readSites = await lib.listWebsites()
+    check('the saved list reads back', JSON.stringify(readSites) === JSON.stringify(savedSites), JSON.stringify(readSites))
+    check('it lives in the same config file as root',
+      (await readFile(cfg, 'utf8')).includes('admin.qidian.example'))
+
+    const badScheme = await lib.saveWebsites([{ name: 'x', url: 'javascript:alert(1)' }]).then(() => null, (e) => e)
+    check('a non-http URL is refused 400',
+      !!badScheme && badScheme.status === 400 && badScheme.code === 'bad-websites',
+      badScheme ? badScheme.message : 'saved anyway')
+    const notArray = await lib.saveWebsites({ name: 'x' }).then(() => null, (e) => e)
+    check('a non-array is refused', !!notArray && notArray.status === 400 && notArray.code === 'bad-websites')
+    const nameless = await lib.saveWebsites([{ url: 'https://noname.example' }]).then(() => null, (e) => e)
+    check('an entry without a name is refused', !!nameless && nameless.status === 400 && nameless.code === 'bad-websites')
+    const crowded = await lib.saveWebsites(
+      Array.from({ length: 101 }, (_, i) => ({ name: `s${i}`, url: 'https://x.example' })),
+    ).then(() => null, (e) => e)
+    check('too many entries are refused', !!crowded && crowded.status === 400 && crowded.code === 'bad-websites')
+    check('a refusal leaves the stored list alone',
+      JSON.stringify(await lib.listWebsites()) === JSON.stringify(savedSites))
+
+    // rows that reach the file by hand (hand-edited yaml) are dropped on read
+    const doc = (await lib.readYamlFile(cfg, null)) || {}
+    doc.websites = [null, 'text', { name: '', url: 'https://x.example' }, { name: 'bad', url: 'ftp://nope' }, { name: '守门', url: 'https://ok.example' }]
+    await lib.writeYamlFile(cfg, doc)
+    const filtered = await lib.listWebsites()
+    check('malformed rows are dropped on read',
+      filtered.length === 1 && filtered[0].name === '守门', JSON.stringify(filtered))
+
+    const clearedSites = await lib.saveWebsites([])
+    check('an empty save clears the list', clearedSites.length === 0 && (await lib.listWebsites()).length === 0)
+    check('clearing drops the key from the config',
+      !(await readFile(cfg, 'utf8')).includes('websites'))
   } finally {
     if (savedEnv.root === undefined) delete process.env.DSH_NOVEL_ROOT
     else process.env.DSH_NOVEL_ROOT = savedEnv.root

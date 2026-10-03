@@ -352,6 +352,38 @@ try {
   const trashClasses = ['ns-book-row', 'ns-book-del', 'ns-trash-row', 'ns-trash-info', 'ns-trash-name', 'ns-trash-when', 'ns-trash-acts', 'ns-trash-open']
   const missingTrashCss = trashClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: recycle bin CSS is in place', missingTrashCss.length === 0, missingTrashCss.join(','))
+  check(
+    'client: website cards open in a fresh browser tab',
+    clientText.includes("window.open(it.url, '_blank', 'noopener,noreferrer')"),
+  )
+  check(
+    'client: the website list is loaded and saved through the API',
+    clientText.includes("call('GET', '/websites')") &&
+      clientText.includes("call('POST', '/websites', { items: next })"),
+  )
+  check(
+    'client: both faces of the website section are bilingual',
+    clientText.includes("websites: '网站接口'") &&
+      clientText.includes("websites: 'Websites'") &&
+      clientText.includes("websiteBadUrl: '网址要以 http:// 或 https:// 开头'") &&
+      clientText.includes("websiteBadUrl: 'The URL must start with http:// or https://'"),
+  )
+  check(
+    'client: the empty pane hosts the website section',
+    clientText.includes("h('div', { className: 'ns-welcome' }") && clientText.includes('h(Websites)'),
+  )
+  check(
+    'client: website entries can be edited and removed',
+    clientText.includes('setDraft({ index, name: it.name, url: it.url })') &&
+      clientText.includes("window.confirm(t('websiteRemoveAsk').replace('{n}', it.name))"),
+  )
+  const siteClasses = ['ns-welcome', 'ns-sites', 'ns-sites-grid', 'ns-site', 'ns-site-open', 'ns-site-name', 'ns-site-url', 'ns-site-acts', 'ns-site-act', 'ns-site-form']
+  const missingSiteCss = siteClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: website section CSS is in place', missingSiteCss.length === 0, missingSiteCss.join(','))
+  check(
+    'client: the website grid scales with the pane',
+    clientText.includes('repeat(auto-fill,minmax(174px,1fr))'),
+  )
   const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
   const missingCss = zoomClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
 
