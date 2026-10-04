@@ -384,6 +384,58 @@ try {
     'client: the website grid scales with the pane',
     clientText.includes('repeat(auto-fill,minmax(174px,1fr))'),
   )
+  // ── layout rebuild, phase 1: workbench overview + grouped navigation ──
+  check(
+    'client: the overview is a workbench with widgets',
+    clientText.includes("className: 'ns-wb-top'") &&
+      clientText.includes("t('wbContinue')") &&
+      clientText.includes("t('wbGoal')") &&
+      clientText.includes("t('wbValidate')") &&
+      clientText.includes("t('wbNewChapter')"),
+  )
+  check(
+    'client: the workbench grounds itself in live data',
+    clientText.includes('/progress`).catch(() => null)') &&
+      clientText.includes('/validate`).catch(() => null)') &&
+      clientText.includes('/unit/chapters`).catch(() => null)') &&
+      clientText.includes('onGo: (k) => setActive(k)'),
+  )
+  check(
+    'client: the quick new chapter goes through the chapters API',
+    clientText.includes("call('POST', `/library/${enc(book.id)}/unit/chapters`, { title: nextChapterTitle(items), body: '' })"),
+  )
+  check(
+    'client: navigation is grouped into three columns',
+    clientText.includes("className: 'ns-groups'") &&
+      clientText.includes("t('grpWrite')") &&
+      clientText.includes("t('grpLib')") &&
+      clientText.includes("t('grpTools')") &&
+      clientText.includes("grpWrite: '创作流'") &&
+      clientText.includes("grpWrite: 'Workflow'"),
+  )
+  check(
+    'client: group card copy is truthful (no invented features)',
+    clientText.includes("cdValidate: '悬空关系 · 未收束伏笔 · 章节断号 · 未完结线索'") &&
+      clientText.includes("cdDrafts: '章节改前的快照，可回退可另存'") &&
+      clientText.includes("cdExport: 'MD · TXT · HTML · JSON 备份 · 发布 · 网站接口'") &&
+      !clientText.includes('DOCX'),
+  )
+  check(
+    'client: the counts row speaks Chinese, not raw keys',
+    clientText.includes("className: 'ns-wb-counts'") && clientText.includes('labelOf[k] || k'),
+  )
+  check(
+    'client: websites are embedded in the export pane too',
+    clientText.split('h(Websites').length - 1 >= 2,
+  )
+  const wbClasses = ['ns-wb-top', 'ns-wb-widget', 'ns-groups', 'ns-group-title', 'ns-group-card', 'ns-group-foot', 'ns-link', 'ns-wb-counts']
+  const missingWbCss = wbClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: workbench and group CSS is in place', missingWbCss.length === 0, missingWbCss.join(','))
+  check(
+    'client: the grouped columns reflow on narrow panes',
+    clientText.includes('repeat(auto-fit,minmax(240px,1fr))') &&
+      clientText.includes('repeat(auto-fit,minmax(184px,1fr))'),
+  )
   const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
   const missingCss = zoomClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
 

@@ -364,7 +364,7 @@ node tests/ai.smoke.mjs        # 198 项 · 取数、勾选、多轮历史、路
 node tests/extract.smoke.mjs   # 148 项 · 补材料：候选分区取舍、严格 JSON 解析与丢弃、只填空字段、tags 并集、长文切片与重试、按章连读与合并、账本（假 llm 桩）
 node tests/bindings.smoke.mjs  # 23 项 · 多值字段（势力成员 / 物品持有者 / 面板归属）与多对多绑定、派生边
 node tests/model.smoke.mjs     # 46 项 · 每书独立模型：归一化、继承规则、目录归一化、路由真的进了调用
-node tests/studio.smoke.mjs    # 97 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、关系图、回收站与网站接口的浏览器半边文本契约与装载
+node tests/studio.smoke.mjs    # 106 项 · 检索、章节重排与重编号、草稿箱、进度记账、导入 dry-run、设置、关系图、回收站与网站接口的浏览器半边文本契约、工作台总览与分组导航、装载
 
 # 对运行中的 DSH 打真实 HTTP
 node tests/http.e2e.mjs        # 226 项 · 真实路由（含 /library/:book/model、/efforts、/extract（单段与按章）、/root 与 /folders、/trash 回收站全流程、/websites 网站接口）+ 热重载
@@ -466,7 +466,16 @@ Junction，因此改代码不需要重新安装。
   两个新顶层路由 `GET /websites` / `POST /websites`（**整表替换**，`400 bad-websites` 拒非 `http(s)`
   网址、缺名与超 100 条）。列表存进配置文件（和书库位置同居 `~/.dsh/novel-studio.yaml`），清浏览器
   数据不丢、保存失败原表保留；栅格 `repeat(auto-fill, minmax(174px, 1fr))`——书架折起右区变宽就
-  自动多一列，**随书架一起缩放**。测试 library 80 / studio 97 / e2e 226。
+  自动多一列，**随书架一起缩放**。测试 library 80 / studio 106 / e2e 226。
+- **阶段 9 追加 · 工作台总览** — 完成：总览页从「英文计数卡」重写成**工作台 + 分组导航**。上排四个
+  widget 并取三份真数据（`progress` / `validate` / `unit/chapters`）：继续写作（末章一键回正文）、
+  字数目标（百分比 + 今日 N 字 · 连续 N 天）、校验提醒（有问题整卡红字）、＋新章节（`nextChapterTitle`
+  猜名直接建章）；下面三栏按「写 → 查 → 用」分组——创作流（正文 · 大纲 · AI 写作 · 面板）、资料库
+  （人物 · 世界观 · 关系图 · 素材 · 草稿）、工具集（校验 · 检索 · 导出，底部小字行 导入 · 设置），
+  卡片文案逐条属实（校验 = 悬空关系 · 未收束伏笔 · 章节断号 · 未完结线索；草稿 = 章节改前的快照；
+  导出 = MD · TXT · HTML · JSON 备份 · 发布 · 网站接口，**不写不存在的 DOCX**），计数行改用 schema
+  的中文分组名。栏宽 `repeat(auto-fit, minmax(240px, 1fr))` 窄屏自动折列，旧 16 Tab 条原样保留；
+  网站接口同时嵌进导出页，写作过程中常驻可见。测试 studio 106。
 
 ## 约定
 
