@@ -451,7 +451,7 @@ try {
   check(
     'client: the overview swaps to the grouped columns when collapsed',
     clientText.includes("navOpen ? null : h('div', { className: 'ns-groups' }, columns.map((col) =>") &&
-      clientText.includes("h('div', { className: 'ns-ov-head' }") &&
+      clientText.includes('onClick: toggleNav') &&
       clientText.includes("navOpen ? t('navCollapse') : t('navExpand')"),
   )
   check(
@@ -466,7 +466,7 @@ try {
       clientText.includes("navExit: '← 退出到总览'") &&
       clientText.includes("navExit: '← Exit to overview'"),
   )
-  const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-ov-head', 'ns-nav-toggle']
+  const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-nav-toggle']
   const missingNavCss = navClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: nav toggle CSS is in place', missingNavCss.length === 0, missingNavCss.join(','))
   const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
