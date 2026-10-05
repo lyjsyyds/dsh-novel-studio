@@ -477,6 +477,42 @@ try {
       clientText.includes("closeBook: '✕ 关闭本书'") &&
       clientText.includes("closeBook: '✕ Close book'"),
   )
+  check(
+    'client: the shared library has a pane of its own',
+    (clientText.match(/function SharedPane\(/g) || []).length === 1 &&
+      (clientText.match(/h\(SharedPane, \{/g) || []).length === 1 &&
+      clientText.includes(": active === 'shared'"),
+  )
+  check(
+    'client: the shared pane sits in the nav strip and the lib column',
+    clientText.includes("'data-on': active === 'shared' ? '1' : '0',") &&
+      clientText.includes("key: 'shared', desc: t('cdShared')") &&
+      clientText.includes("shared: t('sharedTab')"),
+  )
+  check(
+    'client: every shared action goes over the /shared routes',
+    clientText.includes("call('GET', '/shared')") &&
+      clientText.includes('call(\'GET\', `/shared/links?book=${enc(book.id)}`)') &&
+      clientText.includes('/shared/impact?key=${encodeURIComponent(key)}') &&
+      clientText.includes("run('/shared/import',") &&
+      clientText.includes("run('/shared/promote',") &&
+      clientText.includes("run('/shared/sync',") &&
+      clientText.includes("run('/shared/pin',"),
+  )
+  check(
+    'client: shared labels are bilingual',
+    clientText.includes("sharedTab: '共享库'") &&
+      clientText.includes("sharedTab: 'Shared'") &&
+      clientText.includes("shStale: '源已更新'") &&
+      clientText.includes("shStale: 'Source updated'") &&
+      clientText.includes("shModeFork: '派生副本'") &&
+      clientText.includes("shModeFork: 'Forked copy'") &&
+      clientText.includes("shConfirmTitle: '覆盖会影响这些书'") &&
+      clientText.includes("shConfirmTitle: 'Overwriting affects these books'"),
+  )
+  const sharedClasses = ['ns-sh-group', 'ns-sh-row', 'ns-sh-pill', 'ns-sh-acts', 'ns-sh-impact', 'ns-sh-form', 'ns-sh-confirm']
+  const missingSharedCss = sharedClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: shared styles are in place', missingSharedCss.length === 0, missingSharedCss.join(','))
   const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-nav-toggle']
   const missingNavCss = navClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: nav toggle CSS is in place', missingNavCss.length === 0, missingNavCss.join(','))

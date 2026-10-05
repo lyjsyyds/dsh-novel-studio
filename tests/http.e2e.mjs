@@ -39,6 +39,12 @@ const title = `e2e-${stamp}`
 let id = ''
 let created = false
 let origSites = null // the writer's real website list, restored in the finally
+let id2 = '' // a second book, only for the shared-library link flow
+let created2 = false
+let sharedRoot = '' // the library root, so the finally can tidy the store
+let sharedExisted = false // whether the store was already there before this run
+let shId = '' // e2e record promoted into the store
+let shId2 = '' // e2e draft record, for the fork flow
 
 try {
   // ── carrier ─────────────────────────────────────────────────────────────
@@ -517,6 +523,139 @@ try {
   check('PUT /websites 405', (await req('PUT', '/websites', {})).status === 405)
   check('a route under /websites is not found', (await req('GET', '/websites/extra')).status === 404)
 
+  // ── the shared library across books: promote → link → sync, over HTTP ──
+  // The store lives beside the books at `<root>/.novel-shared/`. Everything
+  // this section writes into it is removed again in the finally below (the
+  // store has no delete route yet — that is a later stage), so the writer's
+  // shared library is exactly as it was once the suite finishes.
+  const sh1 = await req('GET', '/shared')
+  check('GET /shared 200', sh1.status === 200 && Array.isArray(sh1.data?.units), `status=${sh1.status}`)
+  check('shared catalog holds characters and materials',
+    !!sh1.data?.units?.find((u) => u.key === 'characters') && !!sh1.data?.units?.find((u) => u.key === 'materials'),
+    (sh1.data?.units || []).map((u) => u.key).join(','))
+  check('shared catalog skips chapters and drafts',
+    !(sh1.data?.units || []).some((u) => u.key === 'chapters' || u.key === 'drafts'))
+  check('a group unit carries its full route',
+    sh1.data?.units?.find((u) => u.key === 'locations')?.route === 'world/locations')
+  sharedRoot = sh1.data?.root || ''
+  shId = `e2e-sh-${stamp}`
+  shId2 = `e2e-sh2-${stamp}`
+  {
+    const { stat } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    sharedExisted = await stat(join(sharedRoot, '.novel-shared', 'shared.yaml')).then(() => true, () => false)
+  }
+
+  // guards first, while nothing exists yet
+  check('bare POST /shared 405', (await req('POST', '/shared', {})).status === 405)
+  check('unknown /shared route 404', (await req('GET', '/shared/nope')).status === 404)
+  check('links of a missing book 404', (await req('GET', '/shared/links?book=no-such-book-xyz')).status === 404)
+  const linksFresh = await req('GET', `/shared/links?book=${enc}`)
+  check('a book with no references lists none',
+    linksFresh.status === 200 && (linksFresh.data?.links || []).length === 0, JSON.stringify(linksFresh.data))
+  const impBad = await req('GET', '/shared/impact?key=nokey')
+  check('malformed impact key 400', impBad.status === 400 && impBad.data?.code === 'shared-key-invalid', impBad.data?.code)
+  check('promote of a missing book 404',
+    (await req('POST', '/shared/promote', { book: 'no-such-book-xyz', unit: 'characters', id: 'x' })).status === 404)
+  check('promote of an unknown unit 404',
+    (await req('POST', '/shared/promote', { book: id, unit: 'chapters', id: 'x' })).status === 404)
+  check('import with a bad mode 400',
+    (await req('POST', '/shared/import', { book: id, unit: 'characters', id: 'x', mode: 'copy' })).status === 400)
+  check('import of an unknown entry 404',
+    (await req('POST', '/shared/import', { book: id, unit: 'characters', id: 'ghost-x', mode: 'fork' })).status === 404)
+  check('sync without a link 404',
+    (await req('POST', '/shared/sync', { book: id, unit: 'characters', id: 'ghost-x' })).status === 404)
+  check('pin without a link 404',
+    (await req('POST', '/shared/pin', { book: id, unit: 'characters', id: 'ghost-x', pin: true })).status === 404)
+
+  // promote two of this book's own records into the store
+  const rec1 = await req('POST', `/library/${enc}/unit/characters`, { id: shId, name: '共享林望', role: '主角' })
+  check('a record to promote is created', rec1.status === 201 && rec1.data?.id === shId, JSON.stringify(rec1.data))
+  const prom = await req('POST', '/shared/promote', { book: id, unit: 'characters', id: shId, status: 'stable' })
+  check('POST /shared/promote 200', prom.status === 200 && prom.data?.key === `characters/${shId}`, JSON.stringify(prom.data))
+  const rec2 = await req('POST', `/library/${enc}/unit/characters`, { id: shId2, name: '共享配角', role: '常驻' })
+  check('a draft record to promote is created', rec2.status === 201 && rec2.data?.id === shId2, JSON.stringify(rec2.data))
+  const prom2 = await req('POST', '/shared/promote', { book: id, unit: 'characters', id: shId2, status: 'draft' })
+  check('a draft entry can be promoted', prom2.status === 200 && prom2.data?.status === 'draft', JSON.stringify(prom2.data))
+
+  const store = await req('GET', '/shared')
+  const entry1 = (store.data?.entries || []).find((e) => e.key === `characters/${shId}`)
+  check('the store lists the promoted entry', !!entry1, JSON.stringify((store.data?.entries || []).map((e) => e.key)))
+  check('the promoted entry is stable', entry1?.status === 'stable')
+  check('the promoted entry carries a rev', /^[0-9a-f]{40}$/.test(entry1?.rev || ''))
+  check('the store never appears as a book',
+    !((await req('GET', '/library')).data?.books || []).some((b) => b.id === '.novel-shared'))
+  const impEmpty = await req('GET', `/shared/impact?key=${encodeURIComponent(`characters/${shId}`)}`)
+  check('impact is empty before anyone references it',
+    impEmpty.status === 200 && impEmpty.data?.books?.length === 0, JSON.stringify(impEmpty.data))
+
+  // a second book brings the entry in as a link …
+  const made2 = await req('POST', '/library', { title: `e2e2-${stamp}`, logline: 'temp' })
+  id2 = made2.data?.book?.id || ''
+  created2 = made2.status === 201
+  check('a second book for the link', created2, JSON.stringify(made2.data))
+  const enc2 = encodeURIComponent(id2)
+  const il = await req('POST', '/shared/import', { book: id2, unit: 'characters', id: shId, mode: 'link' })
+  check('POST /shared/import (link) 200', il.status === 200 && il.data?.mode === 'link', JSON.stringify(il.data))
+  const dupImp = await req('POST', '/shared/import', { book: id2, unit: 'characters', id: shId, mode: 'link' })
+  check('importing twice 409', dupImp.status === 409 && dupImp.data?.code === 'shared-target-exists', dupImp.data?.code)
+  const links2 = await req('GET', `/shared/links?book=${enc2}`)
+  const lk = (links2.data?.links || []).find((l) => l.key === `characters/${shId}`)
+  check('the link shows up fresh', !!lk && lk.mode === 'link' && !lk.stale && !lk.drift && !lk.pin, JSON.stringify(lk))
+
+  // … the origin book moves on: editing it alone leaves the store (the single
+  // source of truth) untouched, so the link stays fresh until the change is
+  // re-promoted — the impact prompt and version backup ride on that overwrite …
+  const upd = await req('PUT', `/library/${enc}/unit/characters/${shId}`, { name: '共享林望·修订', role: '主角' })
+  check('editing the source record 200', upd.status === 200, `status=${upd.status}`)
+  const freshAfterEdit = await req('GET', `/shared/links?book=${enc2}`)
+  const stillLink = freshAfterEdit.data?.links?.find((l) => l.key === `characters/${shId}`)
+  check('an origin edit alone leaves the link fresh', !!stillLink && !stillLink.stale, JSON.stringify(freshAfterEdit.data))
+  const reprom = await req('POST', '/shared/promote', { book: id, unit: 'characters', id: shId, status: 'stable' })
+  check('re-promoting the edit overwrites the store', reprom.status === 200, JSON.stringify(reprom.data))
+  const linksStale = await req('GET', `/shared/links?book=${enc2}`)
+  check('the re-promotion marks the link stale',
+    !!linksStale.data?.links?.find((l) => l.key === `characters/${shId}`)?.stale, JSON.stringify(linksStale.data))
+  const syn = await req('POST', '/shared/sync', { book: id2, unit: 'characters', id: shId })
+  check('POST /shared/sync 200', syn.status === 200, JSON.stringify(syn.data))
+  const linksAfter = await req('GET', `/shared/links?book=${enc2}`)
+  check('sync clears staleness',
+    !linksAfter.data?.links?.find((l) => l.key === `characters/${shId}`)?.stale, JSON.stringify(linksAfter.data))
+  const pulled = await req('GET', `/library/${enc2}/unit/characters/${shId}`)
+  check('the revision landed in the second book',
+    pulled.status === 200 && JSON.stringify(pulled.data).includes('共享林望·修订'), JSON.stringify(pulled.data))
+
+  // … and a locked link stops taking updates until it is unlocked again.
+  const pinOn = await req('POST', '/shared/pin', { book: id2, unit: 'characters', id: shId, pin: true })
+  check('pin the link 200', pinOn.status === 200 && pinOn.data?.pin === true, JSON.stringify(pinOn.data))
+  await req('PUT', `/library/${enc}/unit/characters/${shId}`, { name: '共享林望·再修订', role: '主角' })
+  await req('POST', '/shared/promote', { book: id, unit: 'characters', id: shId, status: 'stable' })
+  const pinnedSync = await req('POST', '/shared/sync', { book: id2, unit: 'characters', id: shId })
+  check('a pinned link refuses sync 409',
+    pinnedSync.status === 409 && pinnedSync.data?.code === 'shared-pinned', pinnedSync.data?.code)
+  const pinOff = await req('POST', '/shared/pin', { book: id2, unit: 'characters', id: shId, pin: false })
+  check('unpin 200', pinOff.status === 200 && pinOff.data?.pin === false, JSON.stringify(pinOff.data))
+  check('after unlocking, sync runs', (await req('POST', '/shared/sync', { book: id2, unit: 'characters', id: shId })).status === 200)
+
+  // a draft cannot be linked but may be forked, and a fork never syncs
+  const draftLink = await req('POST', '/shared/import', { book: id2, unit: 'characters', id: shId2, mode: 'link' })
+  check('linking a draft 409', draftLink.status === 409 && draftLink.data?.code === 'shared-not-stable', draftLink.data?.code)
+  const forked = await req('POST', '/shared/import', { book: id2, unit: 'characters', id: shId2, mode: 'fork' })
+  check('forking a draft 200', forked.status === 200 && forked.data?.mode === 'fork', JSON.stringify(forked.data))
+  const forkSync = await req('POST', '/shared/sync', { book: id2, unit: 'characters', id: shId2 })
+  check('a fork refuses to sync 409',
+    forkSync.status === 409 && forkSync.data?.code === 'shared-fork', forkSync.data?.code)
+
+  // 影响范围: the store reports exactly the book that references the entry
+  const imp1 = await req('GET', `/shared/impact?key=${encodeURIComponent(`characters/${shId}`)}`)
+  check('impact lists the referencing book',
+    imp1.data?.books?.some((x) => x.id === id2), JSON.stringify(imp1.data))
+  check('impact reports the mode',
+    imp1.data?.books?.find((x) => x.id === id2)?.mode === 'link', JSON.stringify(imp1.data))
+  const imp2 = await req('GET', `/shared/impact?key=${encodeURIComponent(`characters/${shId2}`)}`)
+  check('impact counts the fork too',
+    imp2.data?.books?.find((x) => x.id === id2)?.mode === 'fork', JSON.stringify(imp2.data))
+
   // ── guards ──────────────────────────────────────────────────────────────
   const traversal = await req('GET', '/library/..%2F..%2Fetc')
   check('path traversal rejected 400', traversal.status === 400, `status=${traversal.status}`)
@@ -578,10 +717,42 @@ try {
 } finally {
   // Never leave test data behind, even when a check threw.
   if (created && id) await req('DELETE', `/library/${encodeURIComponent(id)}`).catch(() => {})
+  if (created2 && id2) await req('DELETE', `/library/${encodeURIComponent(id2)}`).catch(() => {})
   const leftover = await req('GET', '/trash').catch(() => null)
-  const binned = leftover?.data?.entries?.find((e) => e.name === id)
-  if (binned) await req('DELETE', `/trash/${encodeURIComponent(binned.id)}`).catch(() => {})
+  for (const gone of [id, id2]) {
+    const binned = leftover?.data?.entries?.find((e) => e.name === gone)
+    if (binned) await req('DELETE', `/trash/${encodeURIComponent(binned.id)}`).catch(() => {})
+  }
   if (origSites) await req('POST', '/websites', { items: origSites }).catch(() => {})
+
+  // The shared store: this run promoted e2e records into it, and there is no
+  // delete route yet — take them out straight on disk. A store that existed
+  // before keeps only its own entries; one this run created goes away whole,
+  // so the writer's shared library is exactly as it was.
+  if (sharedRoot && (shId || shId2)) {
+    try {
+      const { rm } = await import('node:fs/promises')
+      const { join } = await import('node:path')
+      const storeDir = join(sharedRoot, '.novel-shared')
+      const ours = [shId, shId2].filter(Boolean)
+      if (!sharedExisted) {
+        await rm(storeDir, { recursive: true, force: true })
+      } else {
+        for (const n of ours) {
+          await rm(join(storeDir, 'characters', `${n}.yaml`), { force: true })
+          await rm(join(storeDir, '.versions', 'characters', n), { recursive: true, force: true })
+        }
+        const libmod = await import(new URL('../lib/library.js', import.meta.url).href)
+        const idx = await libmod.readYamlFile(join(storeDir, 'shared.yaml'), null)
+        if (idx?.entries) {
+          for (const n of ours) delete idx.entries[`characters/${n}`]
+          await libmod.writeYamlFile(join(storeDir, 'shared.yaml'), idx)
+        }
+      }
+    } catch (err) {
+      console.error(`shared store cleanup: ${err.message}`)
+    }
+  }
 }
 
 console.log(log.join('\n'))
