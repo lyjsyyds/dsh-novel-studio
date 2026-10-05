@@ -471,6 +471,12 @@ try {
       clientText.includes("navExit: '← 退出到总览'") &&
       clientText.includes("navExit: '← Exit to overview'"),
   )
+  check(
+    'client: the open book can be closed straight back to the welcome page',
+    clientText.includes("onClick: () => { setActive('overview'); openBook(null) }") &&
+      clientText.includes("closeBook: '✕ 关闭本书'") &&
+      clientText.includes("closeBook: '✕ Close book'"),
+  )
   const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-nav-toggle']
   const missingNavCss = navClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: nav toggle CSS is in place', missingNavCss.length === 0, missingNavCss.join(','))
