@@ -345,6 +345,11 @@ try {
   )
   check('client: deleting the open book closes it', clientText.includes('if (selected === b.id) await onPick(null)'))
   check(
+    'client: a shelf row never repeats its own name as the sub line',
+    clientText.includes("const sub = [b.author, b.genre].filter(Boolean).join(' · ') || (label !== b.id ? b.id : '')") &&
+      clientText.includes("}, label, sub ? h('small', null, sub) : null),"),
+  )
+  check(
     'client: both faces of the shelf are bilingual',
     clientText.includes("bookTrashAsk: '把《{n}》移入回收站？") &&
       clientText.includes("bookTrashAsk: 'Move \"{n}\" to the recycle bin?"),
