@@ -436,6 +436,39 @@ try {
     clientText.includes('repeat(auto-fit,minmax(240px,1fr))') &&
       clientText.includes('repeat(auto-fit,minmax(184px,1fr))'),
   )
+  // ── layout rebuild, phase 1b: overview-driven navigation ──
+  check(
+    'client: the tab strip is opt-in behind a persisted toggle',
+    clientText.includes("const NAV_OPEN = 'dsh-novel-studio.nav-open'") &&
+      clientText.includes("window.localStorage.getItem(NAV_OPEN) === '1'") &&
+      clientText.includes("window.localStorage.setItem(NAV_OPEN, next ? '1' : '0')"),
+  )
+  check(
+    'client: the tab strip renders only while the nav is expanded',
+    clientText.includes("navOpen ? h('div', { className: 'ns-tabs' },") &&
+      clientText.includes("}, t('settingsOpen'))) : null,"),
+  )
+  check(
+    'client: the overview swaps to the grouped columns when collapsed',
+    clientText.includes("navOpen ? null : h('div', { className: 'ns-groups' }, columns.map((col) =>") &&
+      clientText.includes("h('div', { className: 'ns-ov-head' }") &&
+      clientText.includes("navOpen ? t('navCollapse') : t('navExpand')"),
+  )
+  check(
+    'client: sections exit straight back to the overview',
+    clientText.includes("className: 'ns-exit-bar'") &&
+      clientText.includes("onClick: () => setActive('overview') }, t('navExit')"),
+  )
+  check(
+    'client: nav labels are bilingual',
+    clientText.includes("navExpand: '展开导航'") &&
+      clientText.includes("navExpand: 'Expand nav'") &&
+      clientText.includes("navExit: '← 退出到总览'") &&
+      clientText.includes("navExit: '← Exit to overview'"),
+  )
+  const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-ov-head', 'ns-nav-toggle']
+  const missingNavCss = navClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: nav toggle CSS is in place', missingNavCss.length === 0, missingNavCss.join(','))
   const zoomClasses = ['ns-zoom-mask', 'ns-zoom-card', 'ns-zoom-head', 'ns-zoom-text', 'ns-zoom-foot', 'ns-field-bar', 'ns-pill-src']
   const missingCss = zoomClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
 
