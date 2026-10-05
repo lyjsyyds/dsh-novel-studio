@@ -55,7 +55,7 @@ try {
   // ── carrier ─────────────────────────────────────────────────────────────
   const ping = await req('GET', '/ping')
   check('GET /ping 200', ping.status === 200, `status=${ping.status}`)
-  check('GET /ping reports stage 9', ping.data?.stage === 9, `stage=${ping.data?.stage}`)
+  check('GET /ping reports stage 10', ping.data?.stage === 10, `stage=${ping.data?.stage}`)
 
   const boot = await req('GET', '/bootstrap')
   check('GET /bootstrap 200', boot.status === 200)
@@ -213,7 +213,7 @@ try {
   // ── validate routes ─────────────────────────────────────────────────────
   const ruleCat = await req('GET', `/library/${enc}/validate/rules`)
   check('GET validate/rules 200', ruleCat.status === 200, `status=${ruleCat.status}`)
-  check('20 built-in rules over HTTP', (ruleCat.data?.rules || []).length === 20, (ruleCat.data?.rules || []).length)
+  check('24 built-in rules over HTTP', (ruleCat.data?.rules || []).length === 24, (ruleCat.data?.rules || []).length)
 
   const report = await req('GET', `/library/${enc}/validate`)
   check('GET validate 200', report.status === 200, `status=${report.status}`)
@@ -358,10 +358,27 @@ try {
   check('PUT /reader 405', (await req('PUT', `/library/${enc}/reader`)).status === 405)
   check('GET /reader of a missing book 404', (await req('GET', '/library/no-such-book/reader')).status === 404)
 
+  // ── 活历法: read-only arithmetic, so it is checked without a model too ────
+  const cal = await req('GET', `/library/${enc}/calendar`)
+  check('GET /calendar 200', cal.status === 200 && typeof cal.data?.calendar === 'object', cal.data)
+  check('a book with no calendar falls back to the Gregorian year',
+    cal.data?.calendar?.assumed === true && cal.data?.calendar?.yearDays === 365, cal.data?.calendar?.yearDays)
+  check('the month table always has twelve entries the panel can draw',
+    (cal.data?.calendar?.months || []).length === 12, cal.data?.calendar?.months?.length)
+  check('no dates means no story "now" is invented', cal.data?.calendar?.atSource === null, cal.data?.calendar?.atSource)
+  const calAt = await req('GET', `/library/${enc}/calendar?at=${encodeURIComponent('1024年3月5日')}`)
+  check('GET /calendar?at= reads the year back',
+    calAt.data?.calendar?.at?.year === 1024 && calAt.data?.calendar?.atSource === 'query', calAt.data?.calendar?.at)
+  const calBadAt = await req('GET', `/library/${enc}/calendar?at=${encodeURIComponent('说不清')}`)
+  check('an unreadable "at" does not become a date', calBadAt.data?.calendar?.at?.year === undefined || calBadAt.data?.calendar?.at === null, calBadAt.data?.calendar?.at)
+  check('GET /library/:book/calendar/deeper 404', (await req('GET', `/library/${enc}/calendar/deeper`)).status === 404)
+  check('POST /calendar 405', (await req('POST', `/library/${enc}/calendar`, {})).status === 405)
+  check('GET /calendar of a missing book 404', (await req('GET', '/library/no-such-book/calendar')).status === 404)
+
   // the two new rules are in the catalogue the panel lists
   const ruleCatalogue = await req('GET', `/library/${enc}/validate/rules`)
   check('GET /validate/rules 200', ruleCatalogue.status === 200 && Array.isArray(ruleCatalogue.data?.rules), `status=${ruleCatalogue.status}`)
-  for (const id of ['foreshadowing-overdue', 'absent-character', 'secret-leak', 'info-boundary']) {
+  for (const id of ['foreshadowing-overdue', 'absent-character', 'secret-leak', 'info-boundary', 'festival-date', 'event-order', 'age-conflict', 'calendar-assumed']) {
     check(`the rule catalogue lists ${id}`, (ruleCatalogue.data?.rules || []).some((r) => r.id === id))
   }
 
@@ -817,7 +834,7 @@ try {
   } finally {
     await writeFile(apiFile, original, 'utf8')
   }
-  check('reverting api.js takes effect too', (await req('GET', '/ping')).data?.stage === 9)
+  check('reverting api.js takes effect too', (await req('GET', '/ping')).data?.stage === 10)
 
   // ── delete: the book goes to the recycle bin, not the void ─────────────
   const del = await req('DELETE', `/library/${enc}`)

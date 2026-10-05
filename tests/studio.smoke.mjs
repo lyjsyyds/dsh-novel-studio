@@ -608,6 +608,35 @@ try {
   const p1Classes = ['ns-coach', 'ns-rd', 'ns-rd-legend', 'ns-rd-row', 'ns-rd-bars', 'ns-rd-bar', 'ns-rd-item', 'ns-rd-line']
   const missingP1Css = p1Classes.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: P1 styles are in place', missingP1Css.length === 0, missingP1Css.join(','))
+  check(
+    'client: the calendar note reads the host and shows above its own groups',
+    (clientText.match(/function CalendarNote\(/g) || []).length === 1 &&
+      clientText.includes('call(\'GET\', `/library/${enc(book.id)}/calendar${q}`)') &&
+      clientText.includes("group.key === 'calendar' || group.key === 'festivals'") &&
+      clientText.includes('calendarish ? h(CalendarNote, { book }) : null') &&
+      clientText.includes('onKeyDown: (e) => { if (e.key === \'Enter\') reload(at.trim()) }'),
+  )
+  check(
+    'client: the calendar note draws months, festivals and ages',
+    clientText.includes("className: 'ns-cal-month'") &&
+      clientText.includes("className: 'ns-cal-fest'") &&
+      clientText.includes("className: 'ns-cal-age'") &&
+      clientText.includes("data-state': f.daysAway === null") &&
+      clientText.includes("data-bad': a.declared !== null && a.age !== null && Math.abs(a.declared - a.age) >= 2") &&
+      clientText.includes("data.atSource === 'query' ? t('calAtQuery') : t('calAtTimeline')"),
+  )
+  check(
+    'client: calendar labels are bilingual',
+    clientText.includes("calTitle: '历法'") &&
+      clientText.includes("calTitle: 'Calendar'") &&
+      clientText.includes("calIn: '还有 {n} 天'") &&
+      clientText.includes("calIn: 'in {n} days'") &&
+      clientText.includes("calDeclared: '设定写的是 {n} 岁'") &&
+      clientText.includes("calDeclared: 'sheet says {n}'"),
+  )
+  const calClasses = ['ns-cal', 'ns-cal-head', 'ns-cal-at', 'ns-cal-input', 'ns-cal-months', 'ns-cal-month', 'ns-cal-fests', 'ns-cal-fest', 'ns-cal-ages', 'ns-cal-age', 'ns-cal-adecl']
+  const missingCalCss = calClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: calendar styles are in place', missingCalCss.length === 0, missingCalCss.join(','))
   const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-nav-toggle']
   const missingNavCss = navClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: nav toggle CSS is in place', missingNavCss.length === 0, missingNavCss.join(','))

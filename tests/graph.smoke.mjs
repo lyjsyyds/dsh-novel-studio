@@ -150,10 +150,10 @@ try {
   console.log('\nvalidate')
   {
     const rules = await ruleList()
-    check('rule catalogue has 20 built-ins', rules.length === 20, rules.map((r) => r.id))
+    check('rule catalogue has 24 built-ins', rules.length === 24, rules.map((r) => r.id))
     check('catalogue entries carry id/zh/en/level', rules.every((r) => r.id && r.zh && r.en && r.level))
     check('catalogue includes broken-ref', rules.some((r) => r.id === 'broken-ref'))
-    for (const id of ['foreshadowing-overdue', 'foreshadowing-stale', 'foreshadowing-rushed', 'absent-character', 'exit-then-appear', 'secret-leak', 'info-boundary']) {
+    for (const id of ['foreshadowing-overdue', 'foreshadowing-stale', 'foreshadowing-rushed', 'absent-character', 'exit-then-appear', 'secret-leak', 'info-boundary', 'festival-date', 'event-order', 'age-conflict', 'calendar-assumed']) {
       check(`catalogue includes ${id}`, rules.some((r) => r.id === id))
     }
 
@@ -367,7 +367,7 @@ export const rules = [{
     check('validate op names the book', v.book === bookId)
 
     const vr = await ops.invoke('validate', { book: bookId, rules: 'list' })
-    check('validate rules "list" returns the catalogue', vr.ok && vr.rules.length === 20)
+    check('validate rules "list" returns the catalogue', vr.ok && vr.rules.length === 24)
 
     const missing = await ops.invoke('graph', { book: 'no-such-book' })
     check('graph on a missing book refuses', missing.ok === false, missing)
