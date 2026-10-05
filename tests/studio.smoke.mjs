@@ -563,6 +563,43 @@ try {
   const p2Classes = ['ns-sh-layer', 'ns-sh-layerhead', 'ns-sh-override', 'ns-sh-ovfields', 'ns-sh-ovfield', 'ns-sh-badge', 'ns-sh-mini', 'ns-tplstart', 'ns-tplstart-label']
   const missingP2Css = p2Classes.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: P2 shared styles are in place', missingP2Css.length === 0, missingP2Css.join(','))
+  check(
+    'client: the review pane has a consistency and a reader sub-tab',
+    (clientText.match(/function IssueReport\(/g) || []).length === 1 &&
+      (clientText.match(/function ReaderPane\(/g) || []).length === 1 &&
+      clientText.includes('h(IssueReport, { book })') &&
+      clientText.includes('h(ReaderPane, { book })') &&
+      clientText.includes("t('validateIssues')") &&
+      clientText.includes("t('readerTab')"),
+  )
+  check(
+    'client: the reader pane runs one chapter and draws its curve',
+    clientText.includes('call(\'GET\', `/library/${enc(book.id)}/reader`)') &&
+      clientText.includes('call(\'POST\', `/library/${enc(book.id)}/reader`, { chapter })') &&
+      clientText.includes('call(\'DELETE\', `/library/${enc(book.id)}/reader/${enc(id)}`)') &&
+      clientText.includes("t('readerCurve')") &&
+      clientText.includes("className: 'ns-rd-bar'") &&
+      clientText.includes("t('readerRunHint')"),
+  )
+  check(
+    'client: reader labels are bilingual',
+    clientText.includes("readerTension: '紧张度'") &&
+      clientText.includes("readerTension: 'Tension'") &&
+      clientText.includes("readerDrop: '弃书点'") &&
+      clientText.includes("readerDrop: 'Drop risk'") &&
+      clientText.includes("readerEmpty: '还没有读者报告：选一章跑一次，情绪曲线会随报告长出来。'") &&
+      clientText.includes("readerEmpty: 'No reader reports yet — run one chapter and the curve grows.'"),
+  )
+  check(
+    'client: the top bar carries a co-pilot reminder',
+    clientText.includes("className: 'ns-coach'") &&
+      clientText.includes("t('coachIssues')") &&
+      clientText.includes("onClick: () => setActive('validate')") &&
+      clientText.includes('call(\'GET\', `/library/${enc(selected)}/validate`)'),
+  )
+  const p1Classes = ['ns-coach', 'ns-rd', 'ns-rd-legend', 'ns-rd-row', 'ns-rd-bars', 'ns-rd-bar', 'ns-rd-item', 'ns-rd-line']
+  const missingP1Css = p1Classes.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: P1 styles are in place', missingP1Css.length === 0, missingP1Css.join(','))
   const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-nav-toggle']
   const missingNavCss = navClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: nav toggle CSS is in place', missingNavCss.length === 0, missingNavCss.join(','))

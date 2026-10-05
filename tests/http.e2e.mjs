@@ -213,7 +213,7 @@ try {
   // ── validate routes ─────────────────────────────────────────────────────
   const ruleCat = await req('GET', `/library/${enc}/validate/rules`)
   check('GET validate/rules 200', ruleCat.status === 200, `status=${ruleCat.status}`)
-  check('13 built-in rules over HTTP', (ruleCat.data?.rules || []).length === 13, (ruleCat.data?.rules || []).length)
+  check('20 built-in rules over HTTP', (ruleCat.data?.rules || []).length === 20, (ruleCat.data?.rules || []).length)
 
   const report = await req('GET', `/library/${enc}/validate`)
   check('GET validate 200', report.status === 200, `status=${report.status}`)
@@ -278,8 +278,10 @@ try {
   // provider — tests/ai.smoke.mjs drives the streaming path with a stub.)
   const aiTasks = await req('GET', `/library/${enc}/ai/tasks`)
   check('GET /ai/tasks 200', aiTasks.status === 200, `status=${aiTasks.status}`)
-  check('the AI task menu has five entries', (aiTasks.data?.tasks || []).length === 5, (aiTasks.data?.tasks || []).length)
+  check('the AI task menu has six entries', (aiTasks.data?.tasks || []).length === 6, (aiTasks.data?.tasks || []).length)
   check('the AI task menu starts with continue', aiTasks.data?.tasks?.[0]?.key === 'continue', aiTasks.data?.tasks?.[0])
+  check('the AI task menu offers the reader simulation',
+    !!aiTasks.data?.tasks?.find((x) => x.key === 'reader'), (aiTasks.data?.tasks || []).map((x) => x.key))
   check('every AI task describes itself', (aiTasks.data?.tasks || []).every((x) => x.key && x.zh && x.hint))
   check('POST /ai/tasks 405', (await req('POST', `/library/${enc}/ai/tasks`)).status === 405)
 
@@ -335,6 +337,28 @@ try {
   check('POST /ai refuses a non-array history', historyNotArray.status === 400 && historyNotArray.data?.code === 'bad-history', historyNotArray.data)
 
   check('GET /ai 405', (await req('GET', `/library/${enc}/ai`)).status === 405)
+
+  // ── 读者模拟: the reports on disk, and the guards in front of a model call ─
+  // No model is called here either: only the empty list, the refusals and the
+  // delete path are exercised, so the suite stays free and offline-safe.
+  const rdEmpty = await req('GET', `/library/${enc}/reader`)
+  check('GET /reader 200', rdEmpty.status === 200 && Array.isArray(rdEmpty.data?.reports), rdEmpty.data)
+  check('a book with no reports says so', (rdEmpty.data?.reports || []).length === 0 && (rdEmpty.data?.curve || []).length === 0, rdEmpty.data)
+  const rdNoChapter = await req('POST', `/library/${enc}/reader`, {})
+  check('POST /reader without a chapter 400', rdNoChapter.status === 400 && rdNoChapter.data?.code === 'bad-chapter', rdNoChapter.data)
+  const rdMissing = await req('POST', '/library/no-such-book/reader', { chapter: '0001' })
+  check('POST /library/:book/reader on a missing book 404', rdMissing.status === 404, `status=${rdMissing.status}`)
+  const rdGone = await req('DELETE', `/library/${enc}/reader/0001-没有这一章`)
+  check('DELETE a report that is not there 404', rdGone.status === 404 && rdGone.data?.code === 'reader-missing', rdGone.data)
+  check('PUT /reader 405', (await req('PUT', `/library/${enc}/reader`)).status === 405)
+  check('GET /reader of a missing book 404', (await req('GET', '/library/no-such-book/reader')).status === 404)
+
+  // the two new rules are in the catalogue the panel lists
+  const ruleCatalogue = await req('GET', `/library/${enc}/validate/rules`)
+  check('GET /validate/rules 200', ruleCatalogue.status === 200 && Array.isArray(ruleCatalogue.data?.rules), `status=${ruleCatalogue.status}`)
+  for (const id of ['foreshadowing-overdue', 'absent-character', 'secret-leak', 'info-boundary']) {
+    check(`the rule catalogue lists ${id}`, (ruleCatalogue.data?.rules || []).some((r) => r.id === id))
+  }
 
   // ── per-book model route ────────────────────────────────────────────────
   // Books carry their own model choice, independent of each other and of the

@@ -37,10 +37,10 @@ const { LIMITS, TASKS, buildPrompt, listTasks, taskOf } = await fresh('prompt.js
 // ── the menu ──────────────────────────────────────────────────────────────
 {
   const tasks = listTasks()
-  check('five tasks are on the menu', tasks.length === 5, tasks.map((t) => t.key))
+  check('six tasks are on the menu', tasks.length === 6, tasks.map((t) => t.key))
   check(
     'the menu names the tasks the panel shows',
-    tasks.map((t) => t.key).join() === 'continue,continue-new,polish,outline,review',
+    tasks.map((t) => t.key).join() === 'continue,continue-new,polish,outline,review,reader',
     tasks.map((t) => t.key),
   )
   check('every task carries a hint', tasks.every((t) => typeof t.hint === 'string' && t.hint.length > 0))
@@ -48,7 +48,7 @@ const { LIMITS, TASKS, buildPrompt, listTasks, taskOf } = await fresh('prompt.js
   check('taskOf defaults to continue', taskOf().key === 'continue')
   check('taskOf reads a key', taskOf('polish').key === 'polish')
   throwsWith('an unknown task is refused', () => taskOf('nope'), 'unknown-task')
-  check('TASKS is the same menu', TASKS.length === 5)
+  check('TASKS is the same menu', TASKS.length === 6)
 }
 
 // ── required inputs ───────────────────────────────────────────────────────

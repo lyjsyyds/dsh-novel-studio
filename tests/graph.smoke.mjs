@@ -150,9 +150,12 @@ try {
   console.log('\nvalidate')
   {
     const rules = await ruleList()
-    check('rule catalogue has 13 built-ins', rules.length === 13, rules.map((r) => r.id))
+    check('rule catalogue has 20 built-ins', rules.length === 20, rules.map((r) => r.id))
     check('catalogue entries carry id/zh/en/level', rules.every((r) => r.id && r.zh && r.en && r.level))
     check('catalogue includes broken-ref', rules.some((r) => r.id === 'broken-ref'))
+    for (const id of ['foreshadowing-overdue', 'foreshadowing-stale', 'foreshadowing-rushed', 'absent-character', 'exit-then-appear', 'secret-leak', 'info-boundary']) {
+      check(`catalogue includes ${id}`, rules.some((r) => r.id === id))
+    }
 
     const report = await validateBook(dir, { title: '星海拾遗' })
     check('report is ok (no errors)', report.ok === true, report.counts)
@@ -289,6 +292,62 @@ export const rules = [{
     check('kind disappears once the file is gone', !after2.some((k) => k.key === 'relics'), after2.map((k) => k.key))
   }
 
+  // ── foreshadowing / nudges / asymmetric information (P1 rules) ──────────
+  console.log('\ntimeline rules')
+  {
+    const made2 = await ops.invoke('books', { action: 'create', title: '涟漪测试' })
+    check('second book created', made2.ok === true, made2)
+    const id2 = made2.book.id
+    const got2 = await ops.invoke('books', { action: 'get', book: id2 })
+    const dir2 = got2.dir
+
+    // 甲 leaves at 12 and must not come back; he also must not know the ledger
+    // before chapter 20. 乙 never records what he knows. 丙 vanishes after 1.
+    await ops.invoke('records', { action: 'write', book: id2, section: 'characters', data: {
+      id: 'jia', name: '甲', role: '配角', knows: '码头', secret: '账本', learns: '第 20 章', exitChapter: '第 12 章',
+    } })
+    await ops.invoke('records', { action: 'write', book: id2, section: 'characters', data: { id: 'yi', name: '乙', role: '配角' } })
+    await ops.invoke('records', { action: 'write', book: id2, section: 'characters', data: { id: 'bing', name: '丙', role: '配角' } })
+
+    const fores = [
+      { title: '断刃', status: '未回收', plantedChapter: '第 3 章', due: '第 8 章' },
+      { title: '旧信', status: '未回收', plantedChapter: '第 2 章' },
+      { title: '灯', status: '已回收', plantedChapter: '第 5 章', payoff: '第 6 章' },
+    ]
+    for (const item of fores) {
+      const w = await ops.invoke('records', { action: 'write', book: id2, section: 'outline', group: 'foreshadowing', data: item })
+      check(`foreshadowing ${item.title} written`, w.ok === true, w)
+    }
+
+    const chapters = [
+      ['0001-开篇', '开篇', '甲和乙在码头碰面，丙也在场。'],
+      ['0012-转折', '转折', '甲退场，乙独自离开。'],
+      ['0013-回响', '回响', '乙带着账本找上甲，两人争执。'],
+      ['0020-回转', '回转', '甲终于说出账本的来历。'],
+      ['0030-尾声', '尾声', '乙把一切写进书信。'],
+    ]
+    for (const [id, title, body] of chapters) {
+      const w = await ops.invoke('records', { action: 'write', book: id2, section: 'chapters', data: { id, title, body } })
+      check(`chapter ${id} written`, w.ok === true, w)
+    }
+
+    const report = await validateBook(dir2, { title: '涟漪测试' })
+    const byRule = (id) => report.issues.filter((i) => i.rule === id)
+    const says = (id, needle) => byRule(id).some((i) => String(i.message).includes(needle))
+
+    check('foreshadowing-overdue names the due chapter', says('foreshadowing-overdue', '断刃') && says('foreshadowing-overdue', '第 8 章'), byRule('foreshadowing-overdue'))
+    check('foreshadowing-stale counts the wait', says('foreshadowing-stale', '旧信') && says('foreshadowing-stale', '28 章'), byRule('foreshadowing-stale'))
+    check('foreshadowing-rushed flags a one-chapter payoff', says('foreshadowing-rushed', '灯') && says('foreshadowing-rushed', '跨度只有 1 章'), byRule('foreshadowing-rushed'))
+    check('a paid-off foreshadowing is not called overdue', !says('foreshadowing-overdue', '灯'), byRule('foreshadowing-overdue'))
+    check('absent-character notices 丙', says('absent-character', '丙'), byRule('absent-character'))
+    check('exit-then-appear catches 甲 at chapter 13', says('exit-then-appear', '甲') && says('exit-then-appear', '第 13 章'), byRule('exit-then-appear'))
+    check('secret-leak flags the ledger before he learns it', says('secret-leak', '账本') && says('secret-leak', '第 13 章'), byRule('secret-leak'))
+    check('secret-leak is silent after the learns chapter', byRule('secret-leak').length === 1, byRule('secret-leak'))
+    check('info-boundary asks 乙 for his boundary', says('info-boundary', '乙'), byRule('info-boundary'))
+    check('info-boundary skips a character who recorded it', !says('info-boundary', '甲'), byRule('info-boundary'))
+    check('the timeline rules add no errors', (report.counts.error ?? 0) === 0, report.counts)
+  }
+
   // ── ops surface ─────────────────────────────────────────────────────────
   console.log('\noperations')
   {
@@ -308,7 +367,7 @@ export const rules = [{
     check('validate op names the book', v.book === bookId)
 
     const vr = await ops.invoke('validate', { book: bookId, rules: 'list' })
-    check('validate rules "list" returns the catalogue', vr.ok && vr.rules.length === 13)
+    check('validate rules "list" returns the catalogue', vr.ok && vr.rules.length === 20)
 
     const missing = await ops.invoke('graph', { book: 'no-such-book' })
     check('graph on a missing book refuses', missing.ok === false, missing)
