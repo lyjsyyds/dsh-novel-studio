@@ -513,6 +513,56 @@ try {
   const sharedClasses = ['ns-sh-group', 'ns-sh-row', 'ns-sh-pill', 'ns-sh-acts', 'ns-sh-impact', 'ns-sh-form', 'ns-sh-confirm']
   const missingSharedCss = sharedClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: shared styles are in place', missingSharedCss.length === 0, missingSharedCss.join(','))
+  check(
+    'client: the promote form can file a book into a series layer',
+    clientText.includes("shScope: '存放层'") &&
+      clientText.includes("shScope: 'Lives in'") &&
+      clientText.includes("call('POST', '/shared/series', { name })") &&
+      clientText.includes("if (!srcUnit || !srcPick || srcScope === '__new__') return"),
+  )
+  check(
+    'client: the browse view stacks entries by scope layer',
+    clientText.includes("const layerNames = ['', ...Object.keys(seriesMap).sort()]") &&
+      clientText.includes("className: 'ns-sh-layer'") &&
+      clientText.includes("className: 'ns-sh-layerhead'") &&
+      clientText.includes("sc ? (seriesMap[sc]?.name || sc) : t('shGlobal')"),
+  )
+  check(
+    'client: templates, foreshadowing and field exceptions have views of their own',
+    clientText.includes("call('GET', '/shared/templates')") &&
+      clientText.includes("call('GET', '/shared/foreshadowing')") &&
+      clientText.includes("t('shTemplates')") &&
+      clientText.includes("t('shFos')") &&
+      clientText.includes("run('/shared/override',"),
+  )
+  check(
+    'client: a new book can start from a template on the welcome page',
+    (clientText.match(/function TemplateStart\(/g) || []).length === 1 &&
+      clientText.includes('h(TemplateStart, {') &&
+      clientText.includes("call('POST', '/shared/from-template', { tid: pick })") &&
+      clientText.includes("shTplMake: '从模板新建作品'") &&
+      clientText.includes("shTplMake: 'New book from template'"),
+  )
+  check(
+    'client: linked entries wear their scope badge in the editor',
+    clientText.includes("className: 'ns-sh-badge'") &&
+      clientText.includes("className: 'ns-sh-mini'") &&
+      clientText.includes("shBadge: '来自共享库'") &&
+      clientText.includes("shBadge: 'From the shared store'") &&
+      clientText.includes("shOvCount: '{n} 字段本地'"),
+  )
+  check(
+    'client: P2 shared labels are bilingual',
+    clientText.includes("shTemplates: '模板'") &&
+      clientText.includes("shTemplates: 'Templates'") &&
+      clientText.includes("shFos: '跨书伏笔'") &&
+      clientText.includes("shFos: 'Cross-book foreshadowing'") &&
+      clientText.includes("shOverride: '字段例外'") &&
+      clientText.includes("shOverride: 'Field exceptions'"),
+  )
+  const p2Classes = ['ns-sh-layer', 'ns-sh-layerhead', 'ns-sh-override', 'ns-sh-ovfields', 'ns-sh-ovfield', 'ns-sh-badge', 'ns-sh-mini', 'ns-tplstart', 'ns-tplstart-label']
+  const missingP2Css = p2Classes.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
+  check('client: P2 shared styles are in place', missingP2Css.length === 0, missingP2Css.join(','))
   const navClasses = ['ns-exit-bar', 'ns-exit', 'ns-nav-toggle']
   const missingNavCss = navClasses.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: nav toggle CSS is in place', missingNavCss.length === 0, missingNavCss.join(','))

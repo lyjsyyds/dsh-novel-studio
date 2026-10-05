@@ -45,6 +45,11 @@ let sharedRoot = '' // the library root, so the finally can tidy the store
 let sharedExisted = false // whether the store was already there before this run
 let shId = '' // e2e record promoted into the store
 let shId2 = '' // e2e draft record, for the fork flow
+let shId3 = '' // e2e record promoted into a series layer
+let sid = '' // the series id this run created
+let tid = '' // the template id this run created
+let id3 = '' // a third book, grown from the template
+let created3 = false
 
 try {
   // ── carrier ─────────────────────────────────────────────────────────────
@@ -656,6 +661,115 @@ try {
   check('impact counts the fork too',
     imp2.data?.books?.find((x) => x.id === id2)?.mode === 'fork', JSON.stringify(imp2.data))
 
+  // ── P2: series layers, field exceptions, templates, over HTTP ───────────
+  const ser1 = await req('GET', '/shared/series')
+  check('GET /shared/series 200', ser1.status === 200 && typeof ser1.data?.series === 'object', JSON.stringify(ser1.data))
+  const sname = `e2e系-${stamp}`
+  const ser2 = await req('POST', '/shared/series', { name: sname })
+  sid = ser2.data?.sid || ''
+  check('POST /shared/series 200', ser2.status === 200 && !!sid, JSON.stringify(ser2.data))
+  const ser3 = await req('POST', '/shared/series', { name: sname })
+  check('the same series name is idempotent',
+    ser3.status === 200 && ser3.data?.sid === sid && ser3.data?.existed === true, JSON.stringify(ser3.data))
+  const ser4 = await req('GET', '/shared/series')
+  check('the series shows in the registry',
+    (ser4.data?.series || []).find((s) => s.sid === sid)?.name === sname, JSON.stringify(ser4.data?.series))
+
+  const badScope = await req('POST', '/shared/promote', { book: id, unit: 'characters', id: shId, scope: 'ghost-series-xyz' })
+  check('promote into a missing series 404',
+    badScope.status === 404 && badScope.data?.code === 'shared-series-unknown', badScope.data?.code)
+
+  shId3 = `e2e-sh3-${stamp}`
+  const rec3 = await req('POST', `/library/${enc}/unit/characters`, { id: shId3, name: '系内人物', role: '配角' })
+  check('a third record for the series', rec3.status === 201 && rec3.data?.id === shId3, JSON.stringify(rec3.data))
+  const prom3 = await req('POST', '/shared/promote', { book: id, unit: 'characters', id: shId3, status: 'stable', scope: sid })
+  check('promoting into a series layer 200',
+    prom3.status === 200 && String(prom3.data?.key || '').startsWith(`series:${sid}:`), JSON.stringify(prom3.data))
+  {
+    const { stat } = await import('node:fs/promises')
+    const { join } = await import('node:path')
+    const scopedFile = await stat(join(sharedRoot, '.novel-shared', 'series', sid, 'characters', `${shId3}.yaml`))
+      .then(() => true, () => false)
+    check('the scoped file lands in the series folder', scopedFile)
+  }
+  const store2 = await req('GET', '/shared')
+  const entry3 = (store2.data?.entries || []).find((e) => e.key === `series:${sid}:characters/${shId3}`)
+  check('the store lists it under the series scope',
+    !!entry3 && entry3.scope === sid && entry3.series === sname, JSON.stringify(entry3))
+
+  // a second book links the scoped entry…
+  const il3 = await req('POST', '/shared/import', { book: id2, unit: 'characters', id: shId3, mode: 'link', scope: sid })
+  check('importing the scoped entry 200', il3.status === 200 && il3.data?.scope === sid, JSON.stringify(il3.data))
+  const links3 = await req('GET', `/shared/links?book=${enc2}`)
+  const lk3 = (links3.data?.links || []).find((l) => l.key === `characters/${shId3}`)
+  check('the link knows its series',
+    !!lk3 && lk3.scope === sid && lk3.series === sname && !lk3.stale, JSON.stringify(lk3))
+  const imp3 = await req('GET', `/shared/impact?key=${encodeURIComponent(`series:${sid}:characters/${shId3}`)}`)
+  check('impact finds the scoped reference',
+    imp3.status === 200 && imp3.data?.scope === sid && imp3.data?.books?.some((x) => x.id === id2), JSON.stringify(imp3.data))
+  const imp3plain = await req('GET', `/shared/impact?key=${encodeURIComponent(`characters/${shId3}`)}`)
+  check('the plain key misses the scoped reference',
+    imp3plain.status === 200 && (imp3plain.data?.books || []).length === 0, JSON.stringify(imp3plain.data))
+
+  // … and the book keeps its own field while everything else follows the store
+  const ovOk = await req('POST', '/shared/override', { book: id2, unit: 'characters', id: shId3, fields: ['role'] })
+  check('POST /shared/override 200',
+    ovOk.status === 200 && JSON.stringify(ovOk.data?.overrides) === '["role"]', JSON.stringify(ovOk.data))
+  const ovFork = await req('POST', '/shared/override', { book: id2, unit: 'characters', id: shId2, fields: ['role'] })
+  check('override on a fork 409', ovFork.status === 409 && ovFork.data?.code === 'shared-fork', ovFork.data?.code)
+  const ovNone = await req('POST', '/shared/override', { book: id2, unit: 'characters', id: 'ghost-x', fields: ['role'] })
+  check('override without a link 404', ovNone.status === 404, `status=${ovNone.status}`)
+  await req('PUT', `/library/${enc2}/unit/characters/${shId3}`, { name: '系内人物', role: '本地角色' })
+  await req('PUT', `/library/${enc}/unit/characters/${shId3}`, { name: '系内人物·修订', role: '配角' })
+  await req('POST', '/shared/promote', { book: id, unit: 'characters', id: shId3, status: 'stable', scope: sid })
+  const syn3 = await req('POST', '/shared/sync', { book: id2, unit: 'characters', id: shId3 })
+  check('syncing the scoped link 200', syn3.status === 200, JSON.stringify(syn3.data))
+  const after3 = await req('GET', `/library/${enc2}/unit/characters/${shId3}`)
+  check('sync keeps the excepted field local', after3.data?.data?.role === '本地角色', JSON.stringify(after3.data))
+  check('sync pulls the rest from the store',
+    JSON.stringify(after3.data).includes('系内人物·修订'), JSON.stringify(after3.data))
+  const lk3b = (await req('GET', `/shared/links?book=${enc2}`)).data?.links?.find((l) => l.key === `characters/${shId3}`)
+  check('and the link is fresh again with its exceptions kept',
+    !!lk3b && !lk3b.stale && JSON.stringify(lk3b.overrides || []) === '["role"]', JSON.stringify(lk3b))
+
+  // templates: store one, grow a book from it, take it out again
+  const tpl0 = await req('GET', '/shared/templates')
+  check('GET /shared/templates 200', tpl0.status === 200 && Array.isArray(tpl0.data?.templates), JSON.stringify(tpl0.data))
+  const tplGhost = await req('POST', '/shared/templates',
+    { name: `e2e模板-${stamp}`, items: ['characters/ghost-x'] })
+  check('a template pointing at nothing 404',
+    tplGhost.status === 404 && tplGhost.data?.code === 'shared-source-missing', tplGhost.data?.code)
+  const tpl1 = await req('POST', '/shared/templates', {
+    name: `e2e模板-${stamp}`,
+    items: [`characters/${shId}`, `series:${sid}:characters/${shId3}`],
+  })
+  tid = tpl1.data?.tid || ''
+  check('POST /shared/templates 200', tpl1.status === 200 && !!tid, JSON.stringify(tpl1.data))
+  const tpl2 = await req('GET', '/shared/templates')
+  const tp = (tpl2.data?.templates || []).find((x) => x.tid === tid)
+  check('the template resolves its titles', !!tp && (tp.items || []).every((it) => !!it.title), JSON.stringify(tp))
+  check('the template item keeps its scope', (tp?.items || []).some((it) => it.scope === sid), JSON.stringify(tp))
+
+  const made3 = await req('POST', '/shared/from-template', { title: `e2e模板书-${stamp}`, tid })
+  id3 = made3.data?.book?.id || ''
+  created3 = made3.status === 200 && !!id3
+  check('POST /shared/from-template 200', created3, JSON.stringify(made3.data))
+  check('the template brought both entries along',
+    made3.data?.imported?.length === 2 && made3.data?.skipped?.length === 0, JSON.stringify(made3.data))
+  const linksT = await req('GET', `/shared/links?book=${encodeURIComponent(id3)}`)
+  check('the new book links both template entries',
+    (linksT.data?.links || []).length === 2, JSON.stringify(linksT.data))
+  check('the scoped link kept its scope in the new book',
+    (linksT.data?.links || []).find((l) => l.key === `characters/${shId3}`)?.scope === sid, JSON.stringify(linksT.data))
+
+  const tplDel = await req('DELETE', `/shared/templates/${encodeURIComponent(tid)}`)
+  check('DELETE /shared/templates 200', tplDel.status === 200 && tplDel.data?.tid === tid, JSON.stringify(tplDel.data))
+  check('deleting a template twice 404',
+    (await req('DELETE', `/shared/templates/${encodeURIComponent(tid)}`)).data?.code === 'shared-template-missing')
+
+  const fos = await req('GET', '/shared/foreshadowing')
+  check('GET /shared/foreshadowing 200', fos.status === 200 && Array.isArray(fos.data?.groups), JSON.stringify(fos.data).slice(0, 160))
+
   // ── guards ──────────────────────────────────────────────────────────────
   const traversal = await req('GET', '/library/..%2F..%2Fetc')
   check('path traversal rejected 400', traversal.status === 400, `status=${traversal.status}`)
@@ -718,8 +832,9 @@ try {
   // Never leave test data behind, even when a check threw.
   if (created && id) await req('DELETE', `/library/${encodeURIComponent(id)}`).catch(() => {})
   if (created2 && id2) await req('DELETE', `/library/${encodeURIComponent(id2)}`).catch(() => {})
+  if (created3 && id3) await req('DELETE', `/library/${encodeURIComponent(id3)}`).catch(() => {})
   const leftover = await req('GET', '/trash').catch(() => null)
-  for (const gone of [id, id2]) {
+  for (const gone of [id, id2, id3]) {
     const binned = leftover?.data?.entries?.find((e) => e.name === gone)
     if (binned) await req('DELETE', `/trash/${encodeURIComponent(binned.id)}`).catch(() => {})
   }
@@ -734,7 +849,7 @@ try {
       const { rm } = await import('node:fs/promises')
       const { join } = await import('node:path')
       const storeDir = join(sharedRoot, '.novel-shared')
-      const ours = [shId, shId2].filter(Boolean)
+      const ours = [shId, shId2, shId3].filter(Boolean)
       if (!sharedExisted) {
         await rm(storeDir, { recursive: true, force: true })
       } else {
@@ -742,10 +857,18 @@ try {
           await rm(join(storeDir, 'characters', `${n}.yaml`), { force: true })
           await rm(join(storeDir, '.versions', 'characters', n), { recursive: true, force: true })
         }
+        if (sid && shId3) {
+          await rm(join(storeDir, 'series', sid), { recursive: true, force: true })
+          await rm(join(storeDir, '.versions', 'series', sid), { recursive: true, force: true })
+          await rm(join(storeDir, 'series'), { force: true }).catch(() => {}) // only when now empty
+        }
         const libmod = await import(new URL('../lib/library.js', import.meta.url).href)
         const idx = await libmod.readYamlFile(join(storeDir, 'shared.yaml'), null)
         if (idx?.entries) {
           for (const n of ours) delete idx.entries[`characters/${n}`]
+          if (sid && shId3) delete idx.entries[`series:${sid}:characters/${shId3}`]
+          if (sid && idx.series) delete idx.series[sid]
+          if (tid && idx.templates) delete idx.templates[tid]
           await libmod.writeYamlFile(join(storeDir, 'shared.yaml'), idx)
         }
       }
