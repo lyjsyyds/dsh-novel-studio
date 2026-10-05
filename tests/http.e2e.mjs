@@ -278,10 +278,15 @@ try {
   // provider — tests/ai.smoke.mjs drives the streaming path with a stub.)
   const aiTasks = await req('GET', `/library/${enc}/ai/tasks`)
   check('GET /ai/tasks 200', aiTasks.status === 200, `status=${aiTasks.status}`)
-  check('the AI task menu has six entries', (aiTasks.data?.tasks || []).length === 6, (aiTasks.data?.tasks || []).length)
+  check('the AI task menu has nine entries', (aiTasks.data?.tasks || []).length === 9, (aiTasks.data?.tasks || []).length)
   check('the AI task menu starts with continue', aiTasks.data?.tasks?.[0]?.key === 'continue', aiTasks.data?.tasks?.[0])
   check('the AI task menu offers the reader simulation',
     !!aiTasks.data?.tasks?.find((x) => x.key === 'reader'), (aiTasks.data?.tasks || []).map((x) => x.key))
+  check('the AI task menu offers the board, the ripple and the teardown',
+    ['board', 'ripple', 'teardown'].every((k) => !!aiTasks.data?.tasks?.find((x) => x.key === k)),
+    (aiTasks.data?.tasks || []).map((x) => x.key))
+  const teardownMeta = (aiTasks.data?.tasks || []).find((x) => x.key === 'teardown')
+  check('the teardown asks for a pasted passage', teardownMeta?.needs === 'paste', teardownMeta)
   check('every AI task describes itself', (aiTasks.data?.tasks || []).every((x) => x.key && x.zh && x.hint))
   check('POST /ai/tasks 405', (await req('POST', `/library/${enc}/ai/tasks`)).status === 405)
 

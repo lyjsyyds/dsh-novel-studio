@@ -37,10 +37,10 @@ const { LIMITS, TASKS, buildPrompt, listTasks, taskOf } = await fresh('prompt.js
 // ── the menu ──────────────────────────────────────────────────────────────
 {
   const tasks = listTasks()
-  check('six tasks are on the menu', tasks.length === 6, tasks.map((t) => t.key))
+  check('nine tasks are on the menu', tasks.length === 9, tasks.map((t) => t.key))
   check(
     'the menu names the tasks the panel shows',
-    tasks.map((t) => t.key).join() === 'continue,continue-new,polish,outline,review,reader',
+    tasks.map((t) => t.key).join() === 'continue,continue-new,polish,outline,review,reader,board,ripple,teardown',
     tasks.map((t) => t.key),
   )
   check('every task carries a hint', tasks.every((t) => typeof t.hint === 'string' && t.hint.length > 0))
@@ -48,7 +48,7 @@ const { LIMITS, TASKS, buildPrompt, listTasks, taskOf } = await fresh('prompt.js
   check('taskOf defaults to continue', taskOf().key === 'continue')
   check('taskOf reads a key', taskOf('polish').key === 'polish')
   throwsWith('an unknown task is refused', () => taskOf('nope'), 'unknown-task')
-  check('TASKS is the same menu', TASKS.length === 6)
+  check('TASKS is the same menu', TASKS.length === 9)
 }
 
 // ── required inputs ───────────────────────────────────────────────────────
@@ -56,6 +56,9 @@ const { LIMITS, TASKS, buildPrompt, listTasks, taskOf } = await fresh('prompt.js
   throwsWith('continue without a chapter is refused', () => buildPrompt({ task: 'continue' }, {}), 'missing-argument')
   throwsWith('polish without text is refused', () => buildPrompt({ task: 'polish' }, {}), 'missing-argument')
   throwsWith('outline without an idea is refused', () => buildPrompt({ task: 'outline' }, {}), 'missing-argument')
+  throwsWith('teardown without a pasted passage is refused', () => buildPrompt({ task: 'teardown' }, {}), 'missing-argument')
+  throwsWith('board without a chapter is refused', () => buildPrompt({ task: 'board' }, {}), 'missing-argument')
+  throwsWith('ripple without an event is refused', () => buildPrompt({ task: 'ripple' }, {}), 'missing-argument')
   throwsWith('an unknown task never builds a prompt', () => buildPrompt({ task: 'nope' }, {}), 'unknown-task')
   // review has nothing to require: it reads whatever the book already reported.
   const built = buildPrompt({ task: 'review' }, { issues: [] })
@@ -190,6 +193,33 @@ const context = {
   check('maxTokens is rounded', small.maxTokens === 43)
   const bad = buildPrompt({ task: 'continue', maxTokens: -1 }, context)
   check('a nonsense maxTokens falls back to the task default', bad.maxTokens === taskOf('continue').maxTokens)
+}
+
+// ── the engines after the reader: 编辑室 / 事件涟漪 / 拆书 ──────────────────
+{
+  const table = { ...context, chapter: { id: '第二章-记忆', title: '记忆', body: '甲把账本合上。' } }
+  const board = buildPrompt({ task: 'board' }, table)
+  check('the board seats four editors', ['【主编】', '【节奏官】', '【对白医生】', '【逻辑挑刺官】'].every((s) => board.system.includes(s)), board.system)
+  check('the board asks where they disagreed', board.system.includes('分歧:'))
+  check('the board points at concrete places', board.system.includes('指到具体段落或句子'))
+  check('the board reads the chapter on the table', board.user.includes('甲把账本合上。'))
+  const emptyBoard = buildPrompt({ task: 'board' }, { ...context, chapter: { id: '空章' } })
+  check('an empty chapter still gets a board', emptyBoard.user.includes('这一章还没有正文') && emptyBoard.maxTokens === taskOf('board').maxTokens)
+
+  const ripple = buildPrompt({ task: 'ripple', input: '码头塌了' }, context)
+  check('the ripple carries the event', ripple.user.includes('码头塌了'))
+  check('the ripple asks for its three rings', ['直接后果:', '二阶涟漪:', '远处余波:'].every((s) => ripple.system.includes(s)), ripple.system)
+  check('the ripple links to the outline it already has', ripple.user.includes('与已有的大纲节点衔接'))
+  check('the ripple forbids inventing people', ripple.system.includes('设定里没有的人不要凭空造'))
+
+  const teardown = buildPrompt({ task: 'teardown', text: '他推开门，屋里坐着三个人。' }, context)
+  check('teardown carries the pasted passage', teardown.user.includes('他推开门，屋里坐着三个人。'))
+  check('teardown says the passage is another book’s', teardown.system.includes('别的书'))
+  check('teardown bars its setting from leaking in', teardown.system.includes('不要把它当成这本书的设定'))
+  check('teardown may compare against this book', teardown.user.includes('这本书自己的结构') && teardown.user.includes('总字数：约 251 字'))
+  check('teardown asks for a usable trick, not praise', teardown.system.includes('可偷的一招'))
+  const longPaste = buildPrompt({ task: 'teardown', text: '开'.repeat(9000) }, context)
+  check('a long paste is clipped at its own larger budget', longPaste.user.includes(`已截断，原文还有 ${9000 - LIMITS.paste} 字`), LIMITS.paste)
 }
 
 // ── the writer's other pools (选择要喂给 AI 的条目) ────────────────────────

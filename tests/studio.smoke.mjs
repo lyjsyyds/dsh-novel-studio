@@ -597,6 +597,14 @@ try {
       clientText.includes("onClick: () => setActive('validate')") &&
       clientText.includes('call(\'GET\', `/library/${enc(selected)}/validate`)'),
   )
+  check(
+    'client: a task that wants a pasted passage gets its own box',
+    clientText.includes("needs === 'paste'") &&
+      clientText.includes('body.text = paste') &&
+      clientText.includes("needs === 'paste' && !paste.trim()") &&
+      clientText.includes("aiPaste: '要拆解的原文（来自别的书）'") &&
+      clientText.includes("aiPaste: 'Text to take apart (from another book)'"),
+  )
   const p1Classes = ['ns-coach', 'ns-rd', 'ns-rd-legend', 'ns-rd-row', 'ns-rd-bars', 'ns-rd-bar', 'ns-rd-item', 'ns-rd-line']
   const missingP1Css = p1Classes.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: P1 styles are in place', missingP1Css.length === 0, missingP1Css.join(','))
