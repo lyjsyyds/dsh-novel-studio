@@ -605,6 +605,13 @@ try {
       clientText.includes("aiPaste: '要拆解的原文（来自别的书）'") &&
       clientText.includes("aiPaste: 'Text to take apart (from another book)'"),
   )
+  const pasteAt = clientText.indexOf('body.text = paste')
+  const pasteDeps = pasteAt >= 0 ? /\}, \[([^\]]*)\]/.exec(clientText.slice(pasteAt)) : null
+  check(
+    'client: the pasted passage rides in the run callback deps',
+    Boolean(pasteDeps) && pasteDeps[1].split(',').map((s) => s.trim()).includes('paste'),
+    pasteDeps ? pasteDeps[1] : 'run callback not found after body.text = paste',
+  )
   const p1Classes = ['ns-coach', 'ns-rd', 'ns-rd-legend', 'ns-rd-row', 'ns-rd-bars', 'ns-rd-bar', 'ns-rd-item', 'ns-rd-line']
   const missingP1Css = p1Classes.filter((c) => !new RegExp(`\\.${c}[,{ ]`).test(clientText))
   check('client: P1 styles are in place', missingP1Css.length === 0, missingP1Css.join(','))
