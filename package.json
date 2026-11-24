@@ -1,0 +1,59 @@
+{
+  "name": "dsh-novel-studio-lyjs",
+  "version": "1.4.0",
+  "description": "Novel Studio — a dedicated writing partition for DSH: characters, worldbuilding, outline, panels, chapters.",
+  "license": "MIT",
+  "author": "LYJS",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lyjsyyds/dsh-novel-studio.git"
+  },
+  "homepage": "https://github.com/lyjsyyds/dsh-novel-studio#readme",
+  "bugs": {
+    "url": "https://github.com/lyjsyyds/dsh-novel-studio/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "novel",
+    "writing",
+    "markdown"
+  ],
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "lib/studio",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "EXTENSIONS.md"
+  ],
+  "icon": "icon.svg",
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  }
+}
