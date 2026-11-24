@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "title": { "en": "Novel Studio Plugins", "zh": "Novel Studio 插件索引" },
+  "plugins": [
+    {
+      "name": "dsh-novel-studio-lyjs",
+      "title": { "en": "Novel Studio", "zh": "Novel Studio 创作工作台" },
+      "description": {
+        "en": "A writing and creative workspace with resizable chapter tools, branching stories, and the offline Guaji workshop.",
+        "zh": "写作与创作工作台。支持可拉伸的书内工具、分岔宇宙、卦象工坊离线排盘与宿主 AI。"
+      },
+      "author": "LYJS",
+      "icon": "icon.svg",
+      "homepage": "https://github.com/lyjsyyds/dsh-novel-studio#readme",
+      "repository": { "url": "https://github.com/lyjsyyds/dsh-novel-studio" },
+      "versions": [
+        {
+          "version": "1.4.0",
+          "publishTimestamp": 1795540995,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/lyjsyyds/dsh-novel-studio",
+            "commit": "f68a1c3e41e0050e4f582e5e0db2b16a0a5c16b5"
+          },
+          "engines": { "dsh": ">=0.2.0-rc.1" }
+        }
+      ]
+    }
+  ]
+}

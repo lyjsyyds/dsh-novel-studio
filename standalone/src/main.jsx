@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BookMarked, ChartNoAxesColumn, Search, SlidersHorizontal } from 'lucide-react'
+import { BookMarked, ChartNoAxesColumn, PenLine, Search, SlidersHorizontal } from 'lucide-react'
 import { api, fetchLocal, loadModel } from './transport.js'
 import { native, platform } from './platform.js'
 import { recoverInterruptedRestore, saveText } from './library.js'
@@ -13,6 +13,7 @@ import { Revision, Writer } from './writer.jsx'
 import { CharacterMemory, MemoryPicker } from './memory.jsx'
 import { createItem, spaceNames, useSpaces } from './spaces.js'
 import { CreativeSpace, spaceIcons } from './creative-spaces.jsx'
+import { useWritingLayout } from './writing-layout.jsx'
 import './styles.css'
 
 let ui
@@ -28,6 +29,8 @@ const libraryPanels = { menu: '书库管理', backup: '备份与恢复', appeara
 
 function App() {
   const appearance = useTheme()
+  const writingLayout = useWritingLayout()
+  const flushLayout = writingLayout[2]
   const [books, setBooks] = useState([])
   const [sections, setSections] = useState([])
   const [workspace, setWorkspace] = useState(null)
@@ -41,9 +44,13 @@ function App() {
   const [pending, setPending] = useState(true)
   const writerFlush = useRef(null)
   const writerTools = useRef(null)
+  const writerRevision = useRef(null)
+  const currentWorkspace = useRef(null)
+  currentWorkspace.current = workspace
   const pendingBook = useRef(0)
   const flushRef = useCallback((flush) => { writerFlush.current = flush }, [])
   const toolsRef = useCallback((open) => { writerTools.current = open }, [])
+  const revisionRef = useCallback((apply) => { writerRevision.current = apply }, [])
   const notify = useCallback((failure) => setError(failure?.message || String(failure)), [])
   const hub = useSpaces(notify)
   const { flush: flushSpaces, load: loadSpaces } = hub
@@ -51,21 +58,35 @@ function App() {
     const { books: items } = await api('GET', '/library')
     setBooks(items || [])
     setRecent((previous) => items?.some(({ id }) => previous?.id === id) ? previous : null)
+    const current = currentWorkspace.current
+    if (current && !items?.some(({ id }) => id === current.book.id)) {
+      setWorkspace((previous) => previous === current ? null : previous)
+      setSection((previous) => previous === 'write' ? 'shelf' : previous)
+    }
   }, [])
 
   useEffect(() => window.novelNative?.onClosing?.(async () => {
     const ok = (!writerFlush.current || await writerFlush.current()) && await flushSpaces()
+    await flushLayout()
     await native('closeReady', { ok })
-  }), [flushSpaces])
+  }), [flushLayout, flushSpaces])
 
-  const openBook = useCallback(async (id, silent = false) => {
+  const openBook = useCallback(async (id, silent = false, afterRestore = false) => {
     const request = ++pendingBook.current
     try {
-      if (writerFlush.current && !await writerFlush.current()) return
+      if (!afterRestore && currentWorkspace.current?.book.id === id) {
+        setSection('write')
+        setError('')
+        return
+      }
+      if (!afterRestore && writerFlush.current && !await writerFlush.current()) {
+        if (request === pendingBook.current) notify('当前章节未能保存。请返回正文处理后再换书。')
+        return
+      }
       const path = '/library/' + encodeURIComponent(id)
       const [detail, prefs] = await Promise.all([api('GET', path), api('GET', path + '/settings')])
       if (request !== pendingBook.current) return
-      setSection('shelf')
+      setSection('write')
       setWorkspace({ book: detail.book, settings: prefs.settings || {} })
       setRecent(detail.book)
       setLibraryPanel('')
@@ -76,8 +97,11 @@ function App() {
 
   async function navigate(kind, id = null) {
     const request = ++pendingBook.current
-    if ((writerFlush.current && !await writerFlush.current()) || !await flushSpaces() || request !== pendingBook.current) return false
-    setWorkspace(null)
+    if (writerFlush.current && !await writerFlush.current()) {
+      if (request === pendingBook.current) notify('当前章节未能保存，请检查正文底部的保存状态。')
+      return false
+    }
+    if (!await flushSpaces() || request !== pendingBook.current) return false
     setSection(kind)
     setFocusedId(id)
     setLibraryPanel('')
@@ -98,6 +122,7 @@ function App() {
   const compare = useCallback((details) => new Promise((resolve) => setComparison({ ...details, resolve })), [])
   const settle = (result) => { comparison.resolve(result); setComparison(null) }
   const book = workspace?.book
+  const writing = Boolean(book && section === 'write')
   const themeMenu = <ThemeMenu {...appearance} onError={notify} />
 
   async function transfer(kind, anchor, chapterTitle) {
@@ -106,12 +131,14 @@ function App() {
     const seed = kind === 'clips' ? { text: anchor.text, source, tags: '正文选段' }
       : { premise: anchor.text, a: anchor.text, b: anchor.text, anchor: { ...anchor, bookId: book.id } }
     const item = createItem(kind, anchor.text.trim().slice(0, 28), seed)
-    if (writerFlush.current && !await writerFlush.current()) throw new Error('请先保存当前章节，再传送选段。')
     hub.change(kind, (all) => [item, ...all])
-    await navigate(kind, item.id)
+    return item.id
   }
 
   async function compareAnchor(anchor, replacement) {
+    if (book?.id === anchor.bookId && writerFlush.current && !await writerFlush.current()) {
+      throw new Error('来源章节未能保存。请先处理保存问题。')
+    }
     const path = '/library/' + encodeURIComponent(anchor.bookId) + '/unit/chapters/' + encodeURIComponent(anchor.chapter)
     const { data } = await api('GET', path)
     const original = data.body || ''
@@ -120,16 +147,25 @@ function App() {
         !original.slice(0, anchor.start).endsWith(anchor.before) || !original.slice(end).startsWith(anchor.after)) {
       throw new Error('来源选段或相邻文字已变化。请重新选取正文，当前推演已保留。')
     }
-    return compare({ bookId: anchor.bookId, chapter: anchor.chapter, original,
+    const result = await compare({ bookId: anchor.bookId, chapter: anchor.chapter, original,
       proposed: original.slice(0, anchor.start) + replacement + original.slice(end) })
+    if (result && book?.id === anchor.bookId) writerRevision.current?.(anchor.chapter, original, result)
+    return result
   }
 
-  return <GuideContext.Provider value={setGuide}><div className="studio ns-root" data-writing={Boolean(book)}>
+  function resumeWriting() {
+    pendingBook.current++
+    setSection('write')
+    setError('')
+  }
+
+  return <GuideContext.Provider value={setGuide}><div className="studio ns-root" data-writing={writing}>
     <header className="studio-top">
       <div className="wordmark"><BookMarked size={23} aria-hidden /><span>Novel Studio</span></div>
-      {book && <div className="current-book" title={book.title}>{book.title}</div>}
+      {writing && <div className="current-book" title={book.title}>{book.title}</div>}
       <div className="top-tools">
-        {book ? <>
+        {book && !writing && <button className="primary resume-writing" onClick={resumeWriting} title={book.title}><PenLine size={16} />返回正文</button>}
+        {writing ? <>
           <button className="icon-button" aria-label="作品总览" title="作品总览" onClick={() => writerTools.current?.('overview')}><ChartNoAxesColumn size={18} /></button>
           <button className="icon-button" aria-label="搜索工具" title="搜索工具（Ctrl+K）" onClick={() => writerTools.current?.('tools', { findCommand: true })}><Search size={18} /></button>
           <GuideButton />
@@ -141,23 +177,29 @@ function App() {
       {Object.entries({ shelf: '书架', ...spaceNames }).map(([kind, title]) => {
         const Icon = spaceIcons[kind]
         return <button key={kind} aria-label={'进入' + title} aria-current={section === kind ? 'page' : undefined}
-          disabled={pending} onClick={() => { if (section !== kind || book) void navigate(kind) }}>
+          disabled={pending} onClick={() => {
+            if (writing && kind !== 'shelf') void writerTools.current?.('space', { space: kind })
+            else if (section !== kind) void navigate(kind)
+          }}>
           <Icon size={17} aria-hidden /><span>{title}</span></button>
       })}
     </nav>
     <main className="studio-content">
       {error && <p className="top-notice notice" role="alert">{error}</p>}
       {pending ? <div className="workspace-empty">正在打开工作台…</div>
-        : section !== 'shelf' ? <CreativeSpace key={section + ':' + (focusedId || '')} kind={section} hub={hub} initialId={focusedId}
-          compare={compareAnchor} onModelSettings={() => setLibraryPanel('model')} />
-        : book
-        ? <Writer key={book.id} book={book} getPane={ui} sections={sections} appearance={appearance} settings={workspace.settings}
-            registerFlush={flushRef} registerTools={toolsRef} compare={compare} themeMenu={themeMenu} onOpenBook={openBook} onTransfer={transfer}
+        : section === 'shelf' ? <Bookshelf books={books} openBook={openBook} refresh={refresh} ui={ui} recentId={recent?.id} />
+        : section !== 'write' ? <CreativeSpace key={section + ':' + (focusedId || '')} kind={section} hub={hub} initialId={focusedId}
+          compare={compareAnchor} onModelSettings={() => setLibraryPanel('model')} onFork={(id) => navigate('paths', id)} />
+        : null}
+      {!pending && book && <div className="writer-route" hidden={!writing}>
+          <Writer key={book.id} book={book} active={writing} layout={writingLayout} getPane={ui} sections={sections} appearance={appearance} settings={workspace.settings}
+            registerFlush={flushRef} registerTools={toolsRef} registerRevision={revisionRef} compare={compare} themeMenu={themeMenu}
+            onOpenBook={openBook} onTransfer={transfer} hub={hub} compareAnchor={compareAnchor} onExpandSpace={navigate}
             onSettingsChange={(settings) => setWorkspace((previous) => ({ ...previous, settings }))}
             onBookChanged={async (next) => { setWorkspace((previous) => ({ ...previous, book: next })); setRecent(next); await refresh() }} />
-        : <Bookshelf books={books} openBook={openBook} refresh={refresh} ui={ui} recentId={recent?.id} />}
+        </div>}
     </main>
-    {!book && <GuideButton topic={section === 'shelf' ? 'shelf' : 'spaces'} floating />}
+    {!writing && <GuideButton topic={['shelf', 'divination'].includes(section) ? section : 'spaces'} floating />}
     {libraryPanel && <Drawer title={libraryPanels[libraryPanel]} onClose={() => setLibraryPanel('')}
       guideTopic={{ menu: 'shelf', backup: 'transfer', appearance: 'appearance', model: 'ai' }[libraryPanel]}
       onBack={libraryPanel === 'menu' ? undefined : () => setLibraryPanel('menu')}>
@@ -166,7 +208,11 @@ function App() {
           if (key !== 'backup' || await flushSpaces()) setLibraryPanel(key)
         }}>{title}</button>)}
       </section></div>}
-      {libraryPanel === 'backup' && <Backup book={recent} refreshed={async (id) => { await Promise.all([refresh(), loadSpaces()]); if (id) await openBook(id) }} />}
+      {libraryPanel === 'backup' && <Backup book={recent} refreshed={async (id) => {
+        setWorkspace(null)
+        await Promise.all([refresh(), loadSpaces()])
+        if (id) await openBook(id, false, true)
+      }} />}
       {libraryPanel === 'appearance' && <Appearance {...appearance} />}
       {libraryPanel === 'model' && <ModelSettings />}
     </Drawer>}

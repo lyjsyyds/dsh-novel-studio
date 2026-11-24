@@ -1,11 +1,13 @@
 # Novel Studio
 
-## 1.3.0 三端更新
+## 1.4.0 三端更新
 
 - Windows、Android 和 DSH 插件使用同一版创作工作台和版本号。下载入口见 [GitHub Releases](https://github.com/lyjsyyds/dsh-novel-studio/releases)。
-- 创作工作台的一级导航包含书架、策展漫游馆、声音明信片、分岔宇宙、取舍实验室、行动沙盘、即兴排演厅和规则生态舱。每个创作板块都有独立的 AI 操作，确认预览后可将结果写入当前条目。
-- 正文拖选后可移动浮动胶囊。可将选段制成声音明信片，或送入分岔宇宙试写并对照正文。工作台提供白天、夜晚、自定义配色和分区使用说明。
-- DSH 安装 Release 中的插件包后，在宿主侧栏打开「创作工作台」。它沿用 DSH 书库和默认模型。原「小说」入口继续提供原有插件面板。
+- 新增一级板块「卦象工坊」，提供六术十一法、原版分步动画、本地排盘和走向权重。结果可保存、归档、解读、追问，或作为推演素材送入「分岔宇宙」。
+- 书内可拉伸目录、正文和工具区，专注模式支持全屏。独立板块的「返回正文」回到原章。桌面工作台新增柔和留边、圆角和阴影，继续支持白天、夜晚与自定义配色。
+- DSH 版沿用宿主书库与模型。在「插件」开启「实验性自定义插件索引」，到「发现 → 添加来源」粘贴 [Novel Studio 插件索引](https://raw.githubusercontent.com/lyjsyyds/dsh-novel-studio/main/dsh-index.json)。搜索 `Novel Studio` 即可安装。也可下载 Release 的 `.tgz` 包手动安装。
+
+普通构建直接使用已迁入的卦机资源。更新资源时，用 Node 运行 `scripts/import-divination-ui.mjs`，用 Python 3.12 和 Transcrypt 3.9.5 运行 `scripts/import-divination-core.py`，两者的参数都是卦机 `ai-divination` 源码目录。随后运行 `node scripts/compare-divination.mjs` 核对原版对照结果。
 
 ## 独立应用
 

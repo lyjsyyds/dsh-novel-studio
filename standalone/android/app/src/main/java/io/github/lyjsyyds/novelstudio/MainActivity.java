@@ -19,9 +19,15 @@ public class MainActivity extends BridgeActivity {
                 getBridge().getWebView().evaluateJavascript("""
                     (() => {
                         const dialog = Array.from(document.querySelectorAll('dialog:modal')).pop();
-                        if (!dialog) return false;
-                        dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
-                        return true;
+                        if (dialog) {
+                            dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+                            return true;
+                        }
+                        if (document.querySelector('.writing-view[data-focus="true"]')) {
+                            document.dispatchEvent(new Event('novel:exit-focus'));
+                            return true;
+                        }
+                        return false;
                     })()
                     """, result -> {
                         checking = false;

@@ -8,6 +8,10 @@ import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
 import androidx.activity.result.ActivityResult;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -52,6 +56,8 @@ public class NovelNative extends Plugin {
     private final ExecutorService network = Executors.newCachedThreadPool();
     private final Map<String, ProviderRequest> providers = new ConcurrentHashMap<>();
     private Path root;
+    private Integer visibleBars;
+    private int previousBarBehavior;
 
     @Override
     public void load() {
@@ -69,6 +75,9 @@ public class NovelNative extends Plugin {
     public void invoke(PluginCall call) {
         String action = call.getString("action", "");
         switch (action) {
+            case "writingFullscreen":
+                getActivity().runOnUiThread(() -> writingFullscreen(call));
+                return;
             case "openFile":
             case "saveFile":
                 pickDocument(call, action.equals("saveFile"));
@@ -118,6 +127,31 @@ public class NovelNative extends Plugin {
             default:
                 files.execute(() -> work(call, action));
         }
+    }
+
+    private void writingFullscreen(PluginCall call) {
+        var window = getActivity().getWindow();
+        var decor = window.getDecorView();
+        var controller = WindowCompat.getInsetsController(window, decor);
+        int status = WindowInsetsCompat.Type.statusBars();
+        int navigation = WindowInsetsCompat.Type.navigationBars();
+        int bars = status | navigation;
+        if (Boolean.TRUE.equals(call.getBoolean("enabled"))) {
+            if (visibleBars == null) {
+                var insets = ViewCompat.getRootWindowInsets(decor);
+                visibleBars = insets == null ? bars
+                    : (insets.isVisible(status) ? status : 0) | (insets.isVisible(navigation) ? navigation : 0);
+                previousBarBehavior = controller.getSystemBarsBehavior();
+            }
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(bars);
+        } else if (visibleBars != null) {
+            controller.setSystemBarsBehavior(previousBarBehavior);
+            if (visibleBars != 0) controller.show(visibleBars);
+            if ((bars & ~visibleBars) != 0) controller.hide(bars & ~visibleBars);
+            visibleBars = null;
+        }
+        call.resolve();
     }
 
     private void work(PluginCall call, String action) {

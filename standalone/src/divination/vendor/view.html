@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+
+<meta charset="UTF-8">
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" name="viewport">
+<meta content="#12100e" name="theme-color">
+<meta content="yes" name="apple-mobile-web-app-capable">
+<meta content="black-translucent" name="apple-mobile-web-app-status-bar-style">
+<meta content="telephone=no" name="format-detection">
+<title>卦机 · 术数推演</title>
+
+</head>
+<body class="shell">
+
+<!-- 星图背景 -->
+<div aria-hidden="true" class="starfield" id="starfield"></div>
+<!-- 云纹边饰 -->
+<div aria-hidden="true" class="cloud-border top"></div>
+<div aria-hidden="true" class="cloud-border bottom"></div>
+
+<!-- 后端离线提示条（连不上时由 JS 显示） -->
+<div class="offline-badge" id="offlineBadge" style="display:none">
+  <span class="ob-dot"></span>
+  <span data-i18n="offline.badge">未连接后端 · 点右上角设置服务器地址</span>
+</div>
+
+<!-- ══════════════ 顶部 ══════════════ -->
+<header class="topbar">
+  <div class="brand">
+    <div class="luopan">
+      <svg aria-hidden="true" height="46" viewBox="0 0 64 64" width="46">
+        <circle cx="32" cy="32" fill="none" opacity=".35" r="30" stroke="currentColor" stroke-width="1"/>
+        <circle cx="32" cy="32" fill="none" opacity=".7" r="25" stroke="currentColor" stroke-width="1.4"/>
+        <circle cx="32" cy="32" fill="none" opacity=".5" r="19" stroke="currentColor" stroke-width="1"/>
+        <g opacity=".85" stroke="currentColor" stroke-width="1.6">
+          <line x1="32" x2="32" y1="2" y2="8"/><line x1="32" x2="32" y1="56" y2="62"/>
+          <line x1="2" x2="8" y1="32" y2="32"/><line x1="56" x2="62" y1="32" y2="32"/>
+          <line x1="10" x2="14" y1="10" y2="14"/><line x1="54" x2="50" y1="54" y2="50"/>
+          <line x1="54" x2="50" y1="10" y2="14"/><line x1="10" x2="14" y1="54" y2="50"/>
+        </g>
+        <g transform="translate(32,32)">
+          <circle fill="none" r="13" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M0,-13 a6.5,6.5 0 0,1 0,13 a6.5,6.5 0 0,0 0,13" fill="currentColor" opacity=".85"/>
+          <circle cx="0" cy="-6.5" fill="#12100e" r="2.1"/>
+          <circle cx="0" cy="6.5" fill="currentColor" r="2.1"/>
+        </g>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <h1><span data-i18n="brand.name">卦机</span></h1>
+      <p class="sub"><span data-i18n="brand.tagline">术数为骨 · 数理为尺 · 模型为言</span></p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button aria-label="设置" class="icon-btn" data-i18n-title="common.settings" id="btnSettings" title="设置">
+      <svg fill="none" height="17" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24" width="17">
+        <circle cx="12" cy="12" r="3.2"/>
+        <path d="M12 2.5v2.6M12 18.9v2.6M4.2 4.2l1.9 1.9M17.9 17.9l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.2 19.8l1.9-1.9M17.9 6.1l1.9-1.9"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<!-- ══════════════ 输入区 ══════════════ -->
+<section class="scroll-panel" id="inputPanel">
+  <div class="scroll-rod top-rod"></div>
+  <div class="scroll-inner">
+
+    <div class="hero-title">
+      <span class="seal"><span data-i18n="input.seal">占</span></span>
+      <div>
+        <h2><span data-i18n="input.title">所问何事</span></h2>
+        <p><span data-i18n="input.subtitle">一事一占，心诚则灵。问题越具体，推演越有着落。</span></p>
+      </div>
+    </div>
+
+    <div class="field">
+      <textarea data-i18n-ph="input.placeholder" id="question" placeholder="例：今年这笔投资能否获利？&#10;又如：这份工作要不要接？" rows="3"></textarea>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <!-- ⚠️ label 必须显式 for="category"：label 会「隐式关联」到它包住的
+             第一个可标注元素，而这里是个 <button>（管理自定义事类）——
+             不写 for 的话，点「事类」两个字会去触发那个按钮。 -->
+        <label for="category"><span data-i18n="input.category">事类</span><button class="cfg-mini" data-i18n="catMgr.manage" data-i18n-title="catMgr.manageTitle" id="btnManageCat" title="添加、编辑或删除自定义事类" type="button">管理</button></label>
+        <select id="category"><option value><span data-i18n="input.categoryAuto">自动识别</span></option></select>
+      </div>
+      <div class="field">
+        <label><span data-i18n="input.shushu">卦术</span></label>
+        <select id="shushu"></select>
+      </div>
+    </div>
+
+    <div class="field" id="methodField">
+      <label><span data-i18n="input.qiguaMethod">起卦法</span></label>
+      <div class="seg-group" id="methodSeg"></div>
+      <select id="method" style="display:none"></select>
+    </div>
+
+    <div class="field" id="numberField" style="display:none">
+      <label><span data-i18n="input.numbers">报数</span><span class="dim"><span data-i18n="input.numbersHint">心念所至，随意报出 2~3 个数</span></span></label>
+      <input data-i18n-ph="input.numbersPh" id="numbers" placeholder="例：7 23 15" type="text">
+    </div>
+
+    <div class="field" id="autoRecField">
+      <label class="check-line">
+        <input checked id="autoRec" type="checkbox">
+        <span class="check-box"></span>
+        <span><span data-i18n="input.autoRec">自动识别卦术与起卦方式</span><em><span data-i18n="input.autoRecNote">（依所问文本判定，可随时纠正）</span></em></span>
+      </label>
+    </div>
+
+    <!-- 类型识别结果：清晰展示 + 可纠正 + 可锁定 -->
+    <div class="recog-card" id="recogCard" style="display:none">
+      <div class="rc-row">
+        <span class="rc-src" id="recogSrc"></span>
+        <span class="rc-conf" id="recogConf"></span>
+      </div>
+      <div class="rc-pick" id="recogPick"></div>
+      <div class="rc-ev" id="recogEv"></div>
+      <div class="rc-acts">
+        <button class="rc-btn rc-apply" id="recogApply" type="button"><span data-i18n="input.recogApply">采用</span></button>
+        <button class="rc-btn" id="recogFix" type="button"><span data-i18n="input.recogFix">纠正</span></button>
+        <button class="rc-btn rc-lock" id="recogLock" type="button"><span data-i18n="input.recogLock">锁定</span></button>
+      </div>
+    </div>
+
+    <details class="studio-inputs"><summary>起卦时间与种子</summary>
+      <label>起卦时间 <input type="datetime-local" id="studioTimestamp" step="1"></label>
+      <label>随机种子 <input type="text" id="studioSeed" maxlength="128" placeholder="留空时自动生成"></label>
+    </details>
+    <div class="actions">
+      <button class="primary" id="btnDivine">
+        <span class="btn-glow"></span>
+        <span class="btn-text"><span data-i18n="input.divine">起 卦 推 演</span></span>
+      </button>
+    </div>
+    <button class="mode-toggle" id="btnSpeed"><span data-i18n="input.modeProgressive">◎ 推演模式</span></button>
+  </div>
+  <div class="scroll-rod bottom-rod"></div>
+</section>
+
+<!-- ══════════════ 推演过程 ══════════════ -->
+<section class="panel" id="progressPanel" style="display:none">
+  <div class="progress-head">
+    <div aria-hidden="true" class="bagua-spinner">
+      <svg height="52" viewBox="0 0 80 80" width="52">
+        <circle cx="40" cy="40" fill="none" opacity=".25" r="34" stroke="currentColor" stroke-width="1"/>
+        <g stroke="currentColor" stroke-linecap="round" stroke-width="2.4">
+          <line x1="40" x2="40" y1="4" y2="12"/>
+          <line x1="40" x2="40" y1="68" y2="76"/>
+          <line x1="4" x2="12" y1="40" y2="40"/>
+          <line x1="68" x2="76" y1="40" y2="40"/>
+        </g>
+        <circle cx="40" cy="40" fill="none" opacity=".4" r="22" stroke="currentColor" stroke-width="1"/>
+        <circle class="spin-dot" cx="40" cy="18" fill="currentColor" r="3.4"/>
+      </svg>
+    </div>
+    <div>
+      <h3><span data-i18n="progress.title">推演中</span></h3>
+      <p class="progress-sub"><span data-i18n="progress.sub">依卦术次第，逐步推进</span></p>
+    </div>
+    <button class="abort-btn" id="btnAbort" style="display:none" type="button">
+      <span data-i18n="progress.abort">中断</span>
+    </button>
+  </div>
+  <!-- 专属动画舞台：按 (术, 法) 动态挂载对应 Cast；无专属动画时才回落轮盘 -->
+  <div class="cast-stage-host" id="castStage"></div>
+  <div aria-hidden="true" class="wheel-stage" id="wheelStage"></div>
+  <div class="progress-list" id="progressList"></div>
+</section>
+
+<!-- ══════════════ 结果区 ══════════════ -->
+<section id="resultPanel" style="display:none">
+
+  <!-- 卦象展示 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2><span data-i18n="result.gua">卦象</span></h2>
+      <span class="tag" id="tagShushu"></span>
+      <button class="replay-btn" id="btnReplay" type="button">
+        <span data-i18n="result.replay">重看推演</span>
+      </button>
+    </div>
+
+    <!-- 卦图：象意图 -->
+    <div class="gua-stage">
+      <div class="gua-col">
+        <div class="gua-title"><span data-i18n="result.benGua">本卦</span></div>
+        <div class="guatu-wrap" id="guatuWrap"></div>
+      </div>
+      <div class="gua-arrow" id="guaArrow" style="display:none">
+        <svg fill="none" height="20" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" width="20">
+          <path d="M4 12h15M13 6l6 6-6 6"/>
+        </svg>
+        <span data-i18n-html="result.dongBian">动<br>变</span>
+      </div>
+      <div class="gua-col" id="bianCol" style="display:none">
+        <div class="gua-title"><span data-i18n="result.bianGua">变卦</span></div>
+        <div class="guatu-wrap" id="bianTuWrap"></div>
+      </div>
+    </div>
+
+    <!-- 爻线展示 -->
+    <div class="yao-showcase">
+      <div class="yao-col">
+        <div class="yao-label"><span data-i18n="result.benYao">本卦爻象</span></div>
+        <div class="gua-frame">
+          <svg class="gua-svg" id="guaSvg" viewBox="0 0 130 196"></svg>
+        </div>
+        <div class="gua-name" id="guaName"></div>
+        <div class="gua-sub" id="guaSub"></div>
+      </div>
+      <div class="yao-col" id="bianYaoCol" style="display:none">
+        <div class="yao-label"><span data-i18n="result.bianYao">变卦爻象</span></div>
+        <div class="gua-frame">
+          <svg class="gua-svg" id="bianSvg" viewBox="0 0 130 196"></svg>
+        </div>
+        <div class="gua-name" id="bianName"></div>
+        <div class="gua-sub" id="bianSub"></div>
+      </div>
+    </div>
+
+    <!-- 卦义：吉凶等级 · 四字断语 · 卦象含义 · 签诗 -->
+    <div class="gua-verdict" id="guaVerdict" style="display:none"></div>
+
+    <div class="yao-table-wrap">
+      <table class="yao-table" id="yaoTable">
+        <thead>
+          <tr><th><span data-i18n="yao.position">爻位</span></th><th><span data-i18n="yao.guaYao">卦爻</span></th><th><span data-i18n="yao.najia">纳甲</span></th><th><span data-i18n="yao.liuqin">六亲</span></th><th><span data-i18n="yao.liushen">六神</span></th><th><span data-i18n="yao.power">力量</span></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="ganzhi-bar" id="ganzhiBar"></div>
+  </div>
+
+  <!-- 卦术要义 -->
+  <div class="panel">
+    <div class="panel-head"><h2><span data-i18n="essence.title">卦术要义</span></h2><span class="hint"><span data-i18n="essence.hint">该门卦术的核心判断</span></span></div>
+    <div class="essence" id="essence"></div>
+  </div>
+
+  <!-- 概率推演 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2><span data-i18n="prob.title">走向概率</span></h2>
+      <span class="hint"><span data-i18n="prob.hint">数学为骨 · 模型校准为辅</span></span>
+    </div>
+    <div class="prob-meta" id="probMeta"></div>
+    <div class="prob-list" id="probList"></div>
+    <div class="prob-legend">
+      <span><i class="dot math"></i><span data-i18n="prob.mathBase">数学基准</span></span>
+      <span><i class="dot model"></i><span data-i18n="prob.modelDelta">模型校准增量</span></span>
+    </div>
+    <p class="prob-foot">
+      <span data-i18n="prob.foot1">「卦象契合度」衡量该走向与本卦信号的同向程度：</span><b><span data-i18n="prob.footPos">正值</span></b><span data-i18n="prob.footPosTail">表示与卦象同向，</span>
+      <b><span data-i18n="prob.footNeg">负值</span></b><span data-i18n="prob.footNegTail">表示相悖。概率由本地数学内核计算，模型只作微调。</span>
+    </p>
+  </div>
+
+  <!-- 推演公式（术×法两两组合各一条，代入本次真实取值） -->
+  <div class="panel" id="formulaPanel" style="display:none">
+    <div class="panel-head">
+      <h2><span data-i18n="formula.title">推演公式</span></h2>
+      <div class="panel-head-right">
+        <span class="hint" id="formulaTag"></span>
+        <!-- 默认收起：公式是给愿意深究的人看的，默认摊开会把结果页拉得很长，
+             手机上要划很久才到「推演总纲」。开合状态记在本机，跨会话保持。 -->
+        <button aria-controls="fxBody" aria-expanded="false" class="fx-toggle" data-i18n-title="formula.toggleTitle" id="btnFxToggle" title="展开或收起推演公式" type="button">
+          <i aria-hidden="true" class="fx-caret"></i><span id="fxToggleTxt">展开</span>
+        </button>
+      </div>
+    </div>
+    <div id="fxBody">
+      <p class="fx-note" id="fxNote"></p>
+      <div class="fx-stack" id="fxStack"></div>
+    </div>
+  </div>
+
+  <!-- 模型总纲 -->
+  <section class="panel studio-reading" id="studioResultActions" hidden>
+  <div class="panel-head"><h2>创作笔记</h2></div>
+  <details class="studio-effective"><summary>本次起卦输入</summary><p id="studioEffective"></p></details>
+  <div class="actions">
+    <button type="button" id="studioInterpret">AI 解读</button><button type="button" id="studioSave">保存卦象笔记</button>
+    <button type="button" id="studioFork">送入分岔宇宙</button>
+  </div><p id="studioStatus" role="status"></p><div id="studioDraft" hidden>
+    <h3>AI 草稿</h3><p id="studioModel"></p><p id="studioText"></p>
+    <button type="button" id="studioAdopt">采纳到笔记</button><button type="button" id="studioDiscard">丢弃</button>
+  </div><div id="studioConfirm" hidden><p>把这次的题目和卦象摘要制成一条新推演？</p>
+    <button type="button" id="studioConfirmFork">创建推演</button><button type="button" id="studioCancelFork">取消</button>
+  </div><div id="studioAccepted"></div></section>
+  <div class="panel" id="summaryPanel" style="display:none">
+    <div class="panel-head"><h2><span data-i18n="summary.title">推演总纲</span></h2><span class="hint" id="llmBadge"></span></div>
+    <div class="summary" id="summary"></div>
+    <div class="advice-grid">
+      <div class="advice-box">
+        <h3><span data-i18n="summary.advice">宜行</span></h3>
+        <p id="advice"></p>
+      </div>
+      <div class="advice-box">
+        <h3><span data-i18n="summary.timing">应期</span></h3>
+        <p id="timing"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 追问 -->
+  <div class="panel">
+    <div class="panel-head"><h2><span data-i18n="followup.title">继续追问</span></h2><span class="hint"><span data-i18n="followup.hint">基于此卦展开</span></span></div>
+    <div class="chat-log" id="chatLog"></div>
+    <div class="chat-input">
+      <input data-i18n-ph="followup.ph" id="followup" placeholder="基于此卦继续问……">
+      <button aria-label="发送" data-i18n-aria="common.send" id="btnAsk">
+        <svg fill="none" height="17" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="17">
+          <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 交叉验证 -->
+  <div class="panel">
+    <div class="panel-head"><h2><span data-i18n="cross.title">多术交叉</span></h2><span class="hint"><span data-i18n="cross.hint">六术独立推演，互相印证</span></span></div>
+    <button class="ghost wide" id="btnCross"><span data-i18n="cross.run">运行交叉验证</span></button>
+    <div id="crossResult"></div>
+  </div>
+</section>
+
+<!-- ══════════════ 卦术导览 ══════════════ -->
+<section class="panel guide-panel">
+  <div class="panel-head">
+    <h2><span data-i18n="guide.title">六术体系</span></h2>
+    <span class="hint"><span data-i18n="guide.hint">各按本门规矩推演</span></span>
+  </div>
+  <div class="shushu-cards" id="shushuCards"></div>
+
+  <div class="principle">
+    <div class="principle-title">
+      <span class="p-mark"></span>
+      <span data-i18n="guide.principle">概率从何而来</span>
+    </div>
+    <div class="flow-line">
+      <span class="fl-step"><span data-i18n="guide.f1">依术起卦</span></span>
+      <i class="fl-arrow"></i>
+      <span class="fl-step"><span data-i18n="guide.f2">断卦次第</span></span>
+      <i class="fl-arrow"></i>
+      <span class="fl-step accent"><span data-i18n="guide.f3">量化因子</span></span>
+      <i class="fl-arrow"></i>
+      <span class="fl-step accent"><span data-i18n="guide.f4">贝叶斯</span></span>
+      <i class="fl-arrow"></i>
+      <span class="fl-step"><span data-i18n="guide.f5">模型校准</span></span>
+    </div>
+    <p class="principle-note">
+      <span data-i18n="guide.note1">概率由本地确定性算法计算，</span><em><span data-i18n="guide.noteRepro">可复现、可追溯</span></em><span data-i18n="guide.note2">；大模型只输出校准量 δ 与语义解读，</span><em><span data-i18n="guide.noteNoGen">不能直接产出概率</span></em><span data-i18n="guide.note3">。</span>
+    </p>
+  </div>
+</section>
+
+<!-- 底部印记 -->
+<footer class="footer-mark">
+  <div aria-hidden="true" class="cloud-divider"></div>
+  <p><span data-i18n="brand.footer">卦机 · 术数推演</span></p>
+  <p class="dim"><span data-i18n="brand.footerSub">以概率为表 · 以术数为里</span></p>
+</footer>
+
+<!-- ══════════════ 设置弹层 ══════════════ -->
+<div class="modal" id="modal" style="display:none">
+  <div class="modal-box"><div class="modal-head"><h2>工坊设置</h2><button id="btnCloseModal" type="button">关闭</button></div>
+  <div class="modal-body"><div class="cfg-section"><p>界面语言</p><div class="lang-row" id="langRow"></div></div>
+  <button type="button" id="studioModelSettings">打开工作台模型设置</button></div></div></div>
+<!-- ══════════════ 自定义事类管理弹层 ══════════════ -->
+<div class="modal" id="catModal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-grab"></div>
+    <div class="modal-head">
+      <h2><span data-i18n="catMgr.title">自定义事类</span></h2>
+      <button aria-label="关闭" class="icon-btn" data-i18n-aria="common.close" id="btnCloseCat">
+        <svg fill="none" height="15" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="15">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="catmgr-hint" data-i18n="catMgr.hint">自定义事类会作为「事类」参与取用神与模型解读，仅保存在本机。</p>
+      <div class="catmgr-add">
+        <input data-i18n-ph="catMgr.ph" id="catNewName" maxlength="24" placeholder="输入事类名称" type="text">
+        <button class="cfg-mini" data-i18n="catMgr.add" id="btnAddCat" type="button">添加</button>
+      </div>
+      <div class="catmgr-list" id="catList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+
+
+
+
+<!-- ══ 动画层（一术一法一 Cast；顺序：契约地基 → 各 Cast → 汇总） ══ -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>

@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Check, Focus, History, List, PanelRight, Plus, Save, Search, Sparkles, Undo2, Wrench } from 'lucide-react'
+import { BookOpen, Check, Focus, History, List, PanelLeft, PanelRight, Plus, Save, Search, Sparkles, Undo2, Wrench } from 'lucide-react'
 import { api } from './transport.js'
 import { commitChapter, compareParagraphs, loadSession, saveChapterText, saveSession } from './library.js'
 import { chapterLookup } from '../../lib/story.js'
@@ -13,13 +13,15 @@ import { FindReplace, RewritePassage } from './writing-tools.jsx'
 import { SelectionTools } from './selection-tools.jsx'
 import { ChapterOutline, revealPosition, useWritingViewport } from './writer-navigation.jsx'
 import { ChapterContext, ChapterReference, DeskMenu, panelTitles, RecordReference, ReferenceCatalog } from './writer-panels.jsx'
+import { CreativeSpace, spaceIcons } from './creative-spaces.jsx'
+import { spaceNames } from './spaces.js'
+import { Divider, divider, layoutTracks, useFocusMode, useMeasuredWidth } from './writing-layout.jsx'
 
 const enc = encodeURIComponent
 const count = (body) => (body.match(/[\u4e00-\u9fff]|[A-Za-z0-9]+/g) || []).length
 const Manuscript = lazy(() => import('./manuscript.jsx'))
 const deskTabs = [['context', '本章', PanelRight], ['catalog', '资料', BookOpen], ['memory', '前情', History], ['ai', 'AI', Sparkles], ['tools', '工具', Wrench]]
 const isDeskTab = (key) => deskTabs.some(([id]) => id === key)
-const wideDesk = () => matchMedia('(min-width: 1111px)').matches
 const emptyDesk = { active: '', stacks: {} }
 
 function WritingTabs({ active, disabled, chapter, open }) {
@@ -65,8 +67,8 @@ export function Revision({ comparison, settle }) {
   </Drawer>
 }
 
-export function Writer({ book, getPane, sections, compare, registerFlush, registerTools,
-  themeMenu, appearance, settings, onSettingsChange, onBookChanged, onOpenBook, onTransfer }) {
+export function Writer({ book, active, layout, getPane, sections, compare, registerFlush, registerTools, registerRevision,
+  themeMenu, appearance, settings, onSettingsChange, onBookChanged, onOpenBook, onTransfer, hub, compareAnchor, onExpandSpace }) {
   const { AiPane, nextChapterTitle } = getPane
   const root = '/library/' + enc(book.id)
   const base = root + '/unit/chapters'
@@ -76,16 +78,14 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
   const [note, setNote] = useState('')
   const [status, setStatus] = useState('')
   const [view, setView] = useState('write')
-  const [focus, setFocus] = useState(false)
-  const [desk, setDesk] = useState(() => wideDesk() ? { active: 'context', stacks: { context: [{ kind: 'context' }] } } : emptyDesk)
+  const [chaptersVisible, setChaptersVisible] = useState(true)
+  const [desk, setDesk] = useState(emptyDesk)
   const [showChapters, setShowChapters] = useState(false)
   const [context, setContext] = useState(null)
   const [contextError, setContextError] = useState('')
   const [volumes, setVolumes] = useState([])
   const [checkVersion, setCheckVersion] = useState(0)
   const [modelVersion, setModelVersion] = useState(0)
-  const [wide, setWide] = useState(wideDesk)
-  const [mobile, setMobile] = useState(() => matchMedia('(max-width: 760px)').matches)
   const [snapshots, setSnapshots] = useState(null)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -95,8 +95,9 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
   const [paper, setPaper] = useState(() => ({ width: settings?.paperWidth || 680, gap: settings?.paragraphGap || 1.2 }))
   const [canUndo, setCanUndo] = useState(false)
   const deferredBody = useDeferredValue(body)
-  const preview = view === 'read'
-  const split = view === 'split' && wide
+  const surface = useRef(null)
+  const width = useMeasuredWidth(surface, active)
+  const mobile = width <= 760
   const input = useRef(null)
   const selecting = useRef(null)
   const keyboardHeight = useWritingViewport(input, mobile)
@@ -106,20 +107,50 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
   const returnAt = useRef(null)
   const composingRef = useRef(false)
   const pendingChapter = useRef(0)
+  const toolRequest = useRef(0)
+  const wasAway = useRef(false)
+  const preFocusTab = useRef('')
+  const initialDesk = useRef(false)
   const undo = useRef({ at: 0, items: [] })
   const panels = desk.stacks[desk.active] || []
   const panel = panels.at(-1)
   const contextOpen = Boolean(desk.stacks.context)
   const managing = panels.some(({ kind }) => kind === 'manage' || kind === 'import' || kind === 'draft-library')
-  const docked = Boolean(panel && wide && !focus)
+  const [columns, setColumns] = layout
+  const focusMode = useFocusMode((entering) => {
+    rememberEditor({ focus: !mobile, reveal: true })
+    toolRequest.current++
+    if (entering) {
+      preFocusTab.current = desk.active
+      setDesk((old) => ({ ...old, active: '' }))
+    } else {
+      const tab = preFocusTab.current
+      setDesk((old) => ({ ...old, active: old.stacks[tab]?.length ? tab : '' }))
+      preFocusTab.current = ''
+      setShowChapters(false)
+    }
+  })
+  const focus = Boolean(focusMode.mode)
+  const preview = !focus && view === 'read'
+  const rail = !focus && !mobile && chaptersVisible
+  const split = !focus && view === 'split' && width - (rail ? columns.chapters + divider : 0) >= 560
+  const tracks = layoutTracks(width, columns, { rail, dock: Boolean(panel && !focus && active), split })
+  const canSplit = width - (rail ? tracks.chapters + divider : 0) >= 560
+  const docked = tracks.docked
+
   useEffect(() => {
-    const media = matchMedia('(min-width: 1111px)')
-    const small = matchMedia('(max-width: 760px)')
-    const change = () => { setWide(media.matches); setMobile(small.matches) }
-    media.addEventListener('change', change)
-    small.addEventListener('change', change)
-    return () => { media.removeEventListener('change', change); small.removeEventListener('change', change) }
-  }, [])
+    if (!active || !width || !chapter || initialDesk.current) return
+    initialDesk.current = true
+    if (width >= 900 && !focus) setDesk((old) => old === emptyDesk
+      ? { active: 'context', stacks: { context: [{ kind: 'context' }] } } : old)
+  }, [active, width, chapter, focus])
+
+  function rememberEditor(extra = {}) {
+    const record = current.current
+    const editor = input.current
+    restoreAt.current = { from: editor?.selectionStart ?? record.offset, to: editor?.selectionEnd ?? record.end,
+      scroll: editor?.scrollTop ?? record.scroll, ...extra }
+  }
 
   const flush = useCallback(() => {
     const job = operation.current.catch(() => {}).then(async () => {
@@ -177,7 +208,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
       setShowChapters(false)
       if (!keepTools) {
         setDesk((value) => {
-          if (!wideDesk() || !value.active) return emptyDesk
+          if (!value.active) return value
           const active = isDeskTab(value.active) ? value.active : 'context'
           return { active, stacks: { [active]: [{ kind: active }] } }
         })
@@ -221,7 +252,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
   }, [flush, registerFlush])
 
   useEffect(() => {
-    if (restoreAt.current !== null && input.current) {
+    if (active && restoreAt.current !== null && input.current) {
       const { from, to, scroll, focus: shouldFocus, reveal } = restoreAt.current
       if (shouldFocus) input.current.focus({ preventScroll: true })
       input.current.setSelectionRange(from, to ?? from)
@@ -229,7 +260,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
       if (reveal) revealPosition(input.current, from)
       restoreAt.current = null
     }
-  }, [chapter, body, view, panel, showChapters])
+  }, [active, chapter, body, view, panel, showChapters, focus, docked])
 
   useEffect(() => {
     if (settings?.autosave === false || composing || opening) return
@@ -290,20 +321,35 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
     } catch (error) { setStatus(error.message) }
   }
 
+  const applyRevision = useCallback((id, original, updated) => {
+    const record = current.current
+    if (record.id !== id) return
+    if (record.previous !== original || record.body !== record.savedInput) {
+      setStatus('磁盘上的正文已更新。当前编辑已保留，请核对改动后重新打开。')
+      return
+    }
+    undo.current.items = [...undo.current.items.slice(-29), { text: record.body, offset: record.offset }]
+    undo.current.at = 0
+    setCanUndo(true)
+    record.previous = record.savedInput = record.body = updated.body
+    const from = Math.min(record.offset, updated.body.length)
+    record.offset = record.end = from
+    restoreAt.current = { from, scroll: record.scroll, reveal: true }
+    setBody(updated.body)
+    setChapter({ ...updated, id })
+    setSelection(null)
+    setStatus('已保存')
+  }, [])
+
+  useEffect(() => {
+    registerRevision(applyRevision)
+    return () => registerRevision(null)
+  }, [applyRevision, registerRevision])
+
   const doCompare = async (bookId, id, original, proposed) => {
     if (!await flush()) return false
     const updated = await compare({ bookId, chapter: id, original, proposed })
-    if (updated && current.current.id === id) {
-      const record = current.current
-      record.previous = record.savedInput = record.body = updated.body
-      const from = Math.min(record.offset, updated.body.length)
-      record.offset = record.end = from
-      restoreAt.current = { from, scroll: record.scroll }
-      setBody(updated.body)
-      setChapter({ ...updated, id })
-      setSelection(null)
-      setStatus('已保存')
-    }
+    if (updated && bookId === book.id) applyRevision(id, original, updated)
     return Boolean(updated)
   }
 
@@ -416,6 +462,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
 
   const showTool = useCallback(async (kind, { push = false, findCommand = false, selectionRange, ...details } = {}) => {
     if (composingRef.current) return
+    const request = ++toolRequest.current
     const record = current.current
     const editor = input.current
     if (selectionRange && (record.id !== selectionRange.id || record.body.slice(selectionRange.start, selectionRange.end) !== selectionRange.text)) return
@@ -428,7 +475,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
     rememberCaret()
     if (['ai', 'memory', 'scene-memory', 'find', 'rewrite', 'drafts', 'manage', 'import', 'export', 'draft-library', 'validate'].includes(kind)
       && !await flush()) return
-    if (record !== current.current) return
+    if (record !== current.current || request !== toolRequest.current) return
     if (kind === 'rewrite' && (!text || record.previous.slice(start, end) !== text)) {
       setStatus('正文已变化，请重新选段。')
       return
@@ -439,6 +486,11 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
     setDesk((old) => {
       if (findCommand) return { active: 'command', stacks: { ...old.stacks, command: [{ kind: 'tools', focusRequest: Date.now() }] } }
       if (kind === 'overview') return { active: 'overview', stacks: { ...old.stacks, overview: [tool] } }
+      if (kind === 'space') {
+        const active = 'space:' + details.space
+        const previous = old.stacks[active]
+        return { active, stacks: { ...old.stacks, [active]: !details.entry && previous ? previous : [tool] } }
+      }
       if (!push && isDeskTab(kind)) {
         const previous = old.stacks[kind]
         if (old.active === kind && previous) return old
@@ -449,11 +501,28 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
       const previous = push ? old.stacks[active] : null
       return { active, stacks: { ...old.stacks, [active]: [...(previous || [{ kind: active }]), tool] } }
     })
+    return true
   }, [flush, rememberCaret])
 
   function openSelectionTool(kind, range) {
     dismissSelection(false)
     void showTool(kind, { selectionRange: range })
+  }
+
+  async function transferSelection(kind, range) {
+    if (composingRef.current) return
+    const record = current.current
+    if (range.id !== record.id || record.body.slice(range.start, range.end) !== range.text) return
+    rememberCaret()
+    if (!await flush()) throw new Error('请先保存当前章节，再传送选段。')
+    if (record !== current.current || record.body.slice(range.start, range.end) !== range.text) {
+      throw new Error('正文选段已变化，请重新选段。')
+    }
+    const entry = await onTransfer(kind, { chapter: range.id, start: range.start, text: range.text,
+      before: record.body.slice(Math.max(0, range.start - 24), range.start), after: record.body.slice(range.end, range.end + 24) },
+      chapter.title || range.id)
+    dismissSelection(false)
+    await showTool('space', { space: kind, entry })
   }
 
   useEffect(() => {
@@ -463,7 +532,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
 
   useEffect(() => {
     function onShortcut(event) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.isComposing && !composingRef.current
+      if (active && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !event.isComposing && !composingRef.current
         && !document.querySelector('dialog:modal:not(.writing-dock)')) {
         event.preventDefault()
         void showTool('tools', { findCommand: true })
@@ -471,7 +540,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
     }
     document.addEventListener('keydown', onShortcut)
     return () => document.removeEventListener('keydown', onShortcut)
-  }, [showTool])
+  }, [active, showTool])
 
   useEffect(() => {
     if (panel?.kind !== 'drafts') return
@@ -482,12 +551,33 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
   }, [panel, root])
 
   function closeTools() {
-    const { offset, end, scroll } = current.current
-    if (returnAt.current) restoreAt.current = { from: offset, to: end, scroll, focus: returnAt.current.focus }
+    toolRequest.current++
+    const { id, offset, end, scroll } = current.current
+    if (id) restoreAt.current = { from: offset, to: end, scroll, focus: returnAt.current?.focus ?? !mobile, reveal: true }
     returnAt.current = null
     setShowChapters(false)
     setDesk((old) => ({ ...old, active: '' }))
   }
+
+  useEffect(() => {
+    if (!active) { wasAway.current = true; return }
+    if (!wasAway.current) return
+    wasAway.current = false
+    if (returnAt.current || panel || showChapters) closeTools()
+    else {
+      const record = current.current
+      rememberEditor({ from: record.offset, to: record.end, scroll: record.scroll, focus: !mobile, reveal: true })
+      const editor = input.current
+      if (editor) {
+        const { from, to, focus: shouldFocus, scroll } = restoreAt.current
+        if (shouldFocus) editor.focus({ preventScroll: true })
+        editor.setSelectionRange(from, to ?? from)
+        editor.scrollTop = scroll || 0
+        revealPosition(editor, from)
+        restoreAt.current = null
+      }
+    }
+  }, [active])
 
   function showCreate() {
     rememberCaret()
@@ -546,6 +636,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
     onManage={() => showTool('manage')} onDrafts={() => showTool('draft-library')} />
 
   function toolTitle(tool) {
+    if (tool.kind === 'space') return spaceNames[tool.space]
     if (tool.kind !== 'unit' && tool.kind !== 'record') return panelTitles[tool.kind]
     const section = sections.find(({ key }) => key === tool.section)
     return section?.groups?.find(({ key }) => key === tool.group)?.zh || section?.zh || '设定'
@@ -554,8 +645,20 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
   function renderTool(tool) {
     const go = openReference
     switch (tool.kind) {
-      case 'tools': return <DeskMenu open={(kind) => showTool(kind, { push: true })} disabled={!chapter}
-        focusRequest={tool === panel ? tool.focusRequest : undefined} />
+      case 'tools': return <><DeskMenu open={(kind) => showTool(kind, { push: true })} disabled={!chapter}
+        focusRequest={active && tool === panel ? tool.focusRequest : undefined} />
+        <section className="working-spaces-menu"><h3>创作板块</h3><div className="actions">
+          {Object.entries(spaceNames).map(([kind, name]) => {
+            const Icon = spaceIcons[kind]
+            return <button key={kind} onClick={() => showTool('space', { space: kind })}><Icon size={16} />{name}</button>
+          })}
+        </div></section></>
+      case 'space': return <CreativeSpace key={tool.space + ':' + (tool.entry || '')} kind={tool.space} hub={hub} initialId={tool.entry} compare={compareAnchor}
+        onFork={(id) => showTool('space', { space: 'paths', entry: id, push: true })}
+        onModelSettings={() => showTool('ai-settings', { push: true })} onExpand={async (kind, id) => {
+          if (focus) await focusMode.exit()
+          await onExpandSpace(kind, id)
+        }} />
       case 'overview': return <Dashboard book={book} go={(kind) => kind === 'write' ? closeTools() : go(kind)} />
       case 'context': return chapter && <ChapterContext data={context} error={contextError} chapter={chapter} body={deferredBody}
         onGo={go} note={note} onNote={(value) => { current.current.note = value; setNote(value) }}
@@ -637,24 +740,44 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
     }
   }
 
-  return <section className="writing-view" data-focus={focus} data-dock={docked} data-keyboard={Boolean(keyboardHeight)}
-    style={{ '--paper-width': paper.width + 'px', '--paragraph-gap': paper.gap + 'em',
+  function reflowEditor() {
+    requestAnimationFrame(() => {
+      const editor = input.current
+      if (editor) revealPosition(editor, editor.selectionDirection === 'backward' ? editor.selectionStart : editor.selectionEnd)
+    })
+  }
+
+  return <section ref={surface} className="writing-view" data-focus={active && focus} data-rail={rail} data-dock={docked}
+    data-keyboard={active && Boolean(keyboardHeight)}
+    style={{ '--paper-width': focus || columns.fill ? '100%' : paper.width + 'px', '--paragraph-gap': paper.gap + 'em',
+      '--chapter-track': tracks.chapters + 'px', '--tool-track': tracks.tools + 'px',
+      '--split-track': Math.round((tracks.editor - divider) * tracks.ratio / 100) + 'px',
       ...(keyboardHeight ? { '--writing-viewport': keyboardHeight + 'px' } : {}),
       ...(settings?.fontSize ? { '--manuscript-size': settings.fontSize + 'px' } : {}) }}>
-    <aside className="chapter-rail" aria-label="章节目录">{chapterOutline}</aside>
+    <aside className="chapter-rail" aria-label="章节目录" hidden={!rail}>{chapterOutline}</aside>
+    {rail && <Divider label="调整章节目录宽度" value={tracks.chapters} min={144} max={tracks.chapterMax} initial={200}
+      onChange={(n) => setColumns('chapters', n)} onFinish={reflowEditor} />}
     <div className="studio-editor">
       <div className="editor-toolbar">
-        <button className="mobile-chapter" disabled={composing} onClick={() => { rememberCaret(); setShowChapters(true) }}><List size={17} /> 章节</button>
-        <div className="segments" role="group" aria-label="正文显示方式">
+        {focus || mobile
+          ? <button disabled={composing} onClick={() => { rememberCaret(); setShowChapters(true) }}><List size={17} />章节</button>
+          : <button className="icon-button" aria-label={rail ? '收起章节目录' : '展开章节目录'}
+            title={rail ? '收起章节目录' : '展开章节目录'} disabled={composing}
+            onClick={() => { setChaptersVisible(!rail); reflowEditor() }}><PanelLeft size={17} /></button>}
+        {!focus && <div className="segments" role="group" aria-label="正文显示方式">
           <button disabled={composing} data-on={!preview && !split} aria-pressed={!preview && !split} onClick={() => { if (preview) restoreAt.current = { from: current.current.offset, scroll: current.current.scroll }; setView('write') }}>正文</button>
           <button disabled={composing} data-on={preview} aria-pressed={preview} onClick={() => setView('read')}>预览</button>
-          {wide && <button disabled={composing} data-on={split} aria-pressed={split} onClick={() => {
+          {canSplit && <button disabled={composing} data-on={split} aria-pressed={split} onClick={() => {
             if (preview) restoreAt.current = { from: current.current.offset, to: current.current.end, scroll: current.current.scroll }
             setView('split')
-          }}>分屏</button>}</div>
+          }}>分屏</button>}</div>}
         <div className="editor-toolbar-right">
           {focus && <><GuideButton />{themeMenu}</>}
-          <button aria-label={focus ? '退出专注' : '专注模式'} disabled={composing} onClick={() => setFocus(!focus)}><Focus size={17} /><span>{focus ? '退出专注' : '专注模式'}</span></button>
+          {!focus && !mobile && <button aria-label="填满纸面" title={columns.fill ? '恢复固定版心' : '填满可用宽度'}
+            aria-pressed={columns.fill} onClick={() => { setColumns('fill', !columns.fill); reflowEditor() }}>{columns.fill ? '固定版心' : '填满'}</button>}
+          {focus && <span className="focus-indicator" aria-live="polite">{focusMode.mode === 'screen' ? '全屏' : '窗口专注'}</span>}
+          <button aria-label={focus ? '退出专注' : '专注模式'} title={focus ? '退出专注' : '专注模式'}
+            disabled={composing || focusMode.changing} onClick={focusMode.toggle}><Focus size={17} /><span>{focus ? '退出专注' : '专注模式'}</span></button>
         </div>
       </div>
       {chapter ? <>
@@ -689,6 +812,9 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
                     onBlur={() => { if (settings?.autosave !== false) void flush() }} onChange={(event) => edit(event.target)} />}
               </div>
             </div>
+            {split && <Divider label="调整正文与预览比例" value={tracks.ratio} min={tracks.splitMin}
+              max={100 - tracks.splitMin} initial={50} unit="%" scale={100 / (tracks.editor - divider)}
+              onChange={(n) => setColumns('split', n)} onFinish={reflowEditor} />}
             {split && <div className="paper split-preview" aria-label="排版预览">
               <div className="paper-inner"><div className="paper-view-label">预览</div>
                 <Suspense fallback={<p>正在排版…</p>}><Manuscript body={deferredBody} /></Suspense></div></div>}
@@ -696,8 +822,7 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
           {selection && selection.id === chapterId && !preview && !composing && !opening && !managing && (!panel || docked)
             && <SelectionTools key={selection.start + ':' + selection.end} editorRef={input} selection={selection}
               onDismiss={dismissSelection} onOpen={openSelectionTool} onReplace={replaceSelected} onSave={saveSelected}
-              onTransfer={(kind, range) => onTransfer(kind, { chapter: range.id, start: range.start, text: range.text,
-                before: body.slice(Math.max(0, range.start - 24), range.start), after: body.slice(range.end, range.end + 24) }, chapter.title || range.id)} />}
+              onTransfer={transferSelection} />}
         </div>
         <footer className="editor-footer">
           <div className="editor-footer-status">
@@ -716,23 +841,29 @@ export function Writer({ book, getPane, sections, compare, registerFlush, regist
         <div className="actions"><button className="primary" onClick={showCreate}><Plus size={17} /> 新建章节</button>
           {!docked && <button onClick={() => showTool('tools')}>写作工具</button>}</div></div>}
     </div>
-    {creating && <Drawer title="新建章节" guideTopic="writing" onClose={() => { setCreating(false); closeTools() }}>
+    {docked && <Divider label="调整工具区宽度" value={tracks.tools} min={280} max={tracks.toolsMax} initial={360} reverse
+      onChange={(n) => setColumns('tools', n)} onFinish={reflowEditor} />}
+    {creating && <Drawer title="新建章节" guideTopic="writing" visible={active} onClose={() => { setCreating(false); closeTools() }}>
       <form className="form-stack" onSubmit={create}>
         <label>章节标题<input autoFocus required value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
         <button className="primary" type="submit" disabled={!newTitle.trim()}>创建章节</button>
       </form>
     </Drawer>}
-    {showChapters && <Drawer title="切换章节" guideTopic="writing" onClose={closeTools}>{chapterOutline}</Drawer>}
+    {showChapters && <Drawer title="切换章节" guideTopic="writing" visible={active} onClose={closeTools}>{chapterOutline}</Drawer>}
     {Object.keys(desk.stacks).length > 0 && <Drawer title={panel ? toolTitle(panel) : '创作工具'} onClose={closeTools}
-      navigationKey={panel} docked={docked} visible={Boolean(panel)} className="writing-dock"
-      guideTopic={['context', 'catalog', 'memory'].includes(desk.active) ? 'reference'
+      navigationKey={panel} docked={docked} visible={active && Boolean(panel)}
+      className={'writing-dock' + (!docked && width < 900 ? ' writing-sheet' : '')}
+      guideTopic={panel?.kind === 'space' ? 'spaces' : ['context', 'catalog', 'memory'].includes(desk.active) ? 'reference'
         : ['ai', 'ai-settings'].includes(panel?.kind) ? 'ai'
           : ['import', 'export'].includes(panel?.kind) ? 'transfer'
             : panel?.kind === 'appearance' ? 'appearance' : 'writing'}
       tabs={panel && <WritingTabs active={desk.active} disabled={composing} chapter={chapter} open={showTool} />}
-      onBack={panels.length > 1 ? () => setDesk((old) => ({ ...old, stacks: { ...old.stacks, [old.active]: old.stacks[old.active].slice(0, -1) } })) : undefined}>
+      onBack={panels.length > 1 ? () => {
+        toolRequest.current++
+        setDesk((old) => ({ ...old, stacks: { ...old.stacks, [old.active]: old.stacks[old.active].slice(0, -1) } }))
+      } : undefined}>
       {Object.entries(desk.stacks).map(([tab, items]) => items.map((item, index) => <div
-        key={[tab, index, item.kind, item.id, item.start, item.end, item.query].join(':')} hidden={item !== panel} className="writer-tool-page">
+        key={[tab, index, item.kind, item.id, item.start, item.end, item.query, item.entry].join(':')} hidden={item !== panel} className="writer-tool-page">
         {renderTool(item)}
       </div>))}
     </Drawer>}

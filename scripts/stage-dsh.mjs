@@ -8,4 +8,5 @@ for (const entry of await readdir(assets, { withFileTypes: true })) {
   if (entry.isFile() && /^[\w-]+\.(?:js|css|svg)$/.test(entry.name)) await unlink(new URL(entry.name, assets))
 }
 await cp(new URL('index.html', source), new URL('index.html', target))
+await cp(new URL('LICENSE-TRANSCRYPT.txt', source), new URL('LICENSE-TRANSCRYPT.txt', target))
 await cp(new URL('assets/', source), assets, { recursive: true })

@@ -6,7 +6,7 @@ import { platform } from './platform.js'
 
 const path = '/library/.creative-spaces.json'
 export const uid = () => crypto.randomUUID()
-export const spaceNames = { ideas: '策展漫游馆', clips: '声音明信片', paths: '分岔宇宙', choices: '取舍实验室', projects: '行动沙盘', stage: '即兴排演厅', ecosystem: '规则生态舱' }
+export const spaceNames = { ideas: '策展漫游馆', clips: '声音明信片', paths: '分岔宇宙', choices: '取舍实验室', projects: '行动沙盘', stage: '即兴排演厅', ecosystem: '规则生态舱', divination: '卦象工坊' }
 
 export function createItem(kind, title, seed = {}) {
   const defaults = {

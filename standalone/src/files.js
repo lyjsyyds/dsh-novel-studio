@@ -2,7 +2,7 @@ import { Buffer } from 'buffer'
 import { native, platform } from './platform.js'
 
 const request = async (op, path, options = {}) => {
-  if (platform === 'dsh' && /^\/settings\/(?:appearance|recent-book)\.json$/.test(path)) {
+  if (platform === 'dsh' && /^\/settings\/(?:appearance|recent-book|writing-layout)\.json$/.test(path)) {
     const key = 'dsh-novel-studio:' + path
     if (op === 'write') { localStorage.setItem(key, options.base64); return {} }
     const base64 = localStorage.getItem(key)

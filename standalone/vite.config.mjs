@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 const relative = (path) => fileURLToPath(new URL(path, import.meta.url))
 
@@ -16,6 +18,14 @@ export default defineConfig({
     { find: 'node:url', replacement: relative('./src/node-compat.js') },
   ] },
   plugins: [{
+    name: 'novel-studio-guaji-csp',
+    transformIndexHtml(html) {
+      const source = readFileSync(relative('./src/divination/vendor/view.js'), 'utf8')
+        .replace(/\r\n/g, '\n').replace(/<\/script/ig, '<\\/script')
+      const hash = createHash('sha256').update(source).digest('base64')
+      return html.replace("script-src 'self' file:;", `script-src 'self' file: 'sha256-${hash}'; frame-src 'self' file: about:;`)
+    },
+  }, {
     name: 'novel-studio-shared-core',
     enforce: 'pre',
     transform(code, id) {

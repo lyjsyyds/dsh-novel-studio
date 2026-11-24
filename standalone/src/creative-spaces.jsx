@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Archive, ArrowDown, ArrowUp, BookOpen, Columns3, GitBranch, Grid2X2, GripVertical, Layers, Mic, Music, Plus, Scale, Settings2, Sparkles } from 'lucide-react'
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Archive, ArrowDown, ArrowUp, BookOpen, Columns3, Compass, GitBranch, Grid2X2, GripVertical, Layers, Mic, Music, Plus, Scale, Settings2, Sparkles } from 'lucide-react'
 import { createItem, spaceNames, uid } from './spaces.js'
 import { Ecosystem, SoundCard } from './experiments.jsx'
 import { SpaceAi, spaceAiLabel } from './space-ai.jsx'
 
-export const spaceIcons = { shelf: BookOpen, ideas: Layers, clips: Music, paths: GitBranch, choices: Scale, projects: Columns3, stage: Mic, ecosystem: Grid2X2 }
+const GuajiSpace = lazy(() => import('./divination/GuajiSpace.jsx').then(({ GuajiSpace }) => ({ default: GuajiSpace })))
+
+export const spaceIcons = { shelf: BookOpen, ideas: Layers, clips: Music, paths: GitBranch, choices: Scale, projects: Columns3, stage: Mic, ecosystem: Grid2X2, divination: Compass }
 const nouns = { ideas: '展览', clips: '明信片', paths: '推演', choices: '决策', projects: '沙盘', stage: '演练稿', ecosystem: '实验' }
 
 function AddLine({ label, add }) {
@@ -178,7 +180,14 @@ function Stage({ item, patch }) {
 }
 
 const pages = { ideas: Ideas, clips: Collection, paths: Scenarios, choices: Decisions, projects: Projects, stage: Stage, ecosystem: Ecosystem }
-export function CreativeSpace({ kind, hub, initialId, compare, onModelSettings }) {
+export function CreativeSpace(props) {
+  if (props.kind === 'divination') return <Suspense fallback={<div className="workspace-empty">正在打开卦象工坊…</div>}>
+    <GuajiSpace {...props} />
+  </Suspense>
+  return <StandardSpace {...props} />
+}
+
+function StandardSpace({ kind, hub, initialId, compare, onModelSettings, onExpand }) {
   const [selected, select] = useState(initialId)
   const [query, search] = useState('')
   const [archived, toggle] = useState(false)
@@ -199,9 +208,9 @@ export function CreativeSpace({ kind, hub, initialId, compare, onModelSettings }
     select(row.id)
     if (management.current) management.current.open = false
   }
-  return <section className="workspace creative-space" data-space={kind}>
+  return <section className="workspace creative-space" data-space={kind} data-embedded={Boolean(onExpand)}>
     <header className="space-heading">
-      <div className="space-title"><Icon size={25} aria-hidden /><h1>{spaceNames[kind]}</h1></div>
+      {!onExpand && <div className="space-title"><Icon size={25} aria-hidden /><h1>{spaceNames[kind]}</h1></div>}
       <div className="space-context">
         {item && <select aria-label={'切换' + nouns[kind]} value={item.id} onChange={(e) => select(e.target.value)}>
           {filtered.map((row) => <option key={row.id} value={row.id}>{row.title || '未命名'}</option>)}
@@ -221,6 +230,7 @@ export function CreativeSpace({ kind, hub, initialId, compare, onModelSettings }
         {item && !archived && !item.session && <button className="workspace-ai-button" onClick={() => { if (management.current) management.current.open = false; openAi(true) }}>
           <Sparkles size={16} aria-hidden />{spaceAiLabel(kind)}
         </button>}
+        {onExpand && !archived && <button className="space-expand" onClick={() => onExpand(kind, item?.id)}>在独立板块打开</button>}
       </div>
     </header>
     {item ? <article className="space-sheet" key={item.id}>
