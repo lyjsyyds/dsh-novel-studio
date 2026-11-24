@@ -2,3 +2,10 @@ node_modules/
 *.tgz
 *.log
 .DS_Store
+standalone/.build-cache/
+standalone/release/
+standalone/web-dist/
+lib/studio/
+*.p12
+*.keystore
+*.jks

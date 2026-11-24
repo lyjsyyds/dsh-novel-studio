@@ -1,0 +1,7 @@
+{
+  "appId": "io.github.lyjsyyds.novelstudio",
+  "appName": "Novel Studio",
+  "webDir": "standalone/web-dist",
+  "android": { "path": "standalone/android", "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

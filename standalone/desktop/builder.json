@@ -1,0 +1,9 @@
+{
+  "appId": "io.github.lyjsyyds.novelstudio",
+  "productName": "Novel Studio",
+  "directories": { "output": "standalone/release" },
+  "extraMetadata": { "main": "standalone/desktop/main.cjs" },
+  "files": ["standalone/web-dist/**/*", "standalone/desktop/*.cjs", "package.json"],
+  "win": { "icon": "standalone/desktop/icon.svg", "target": [{ "target": "portable", "arch": ["x64"] }] },
+  "portable": { "artifactName": "Novel-Studio-Windows-x64.exe", "requestExecutionLevel": "user" }
+}

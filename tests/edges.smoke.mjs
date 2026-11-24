@@ -44,8 +44,6 @@ async function refuses(name, code, fn) {
   }
 }
 
-let created = false
-
 try {
   const ops = await fresh('ops.js', 'e1')
   const { createEdge, deleteEdge, updateEdge } = await fresh('edges.js', 'e1')
@@ -56,7 +54,6 @@ try {
   const made = await ops.invoke('books', { action: 'create', title: '星海拾遗', meta: { author: '测试' } })
   check('book created', made.ok === true, made)
   const book = made.book.id
-  created = true
   const dir = (await ops.invoke('books', { action: 'get', book })).dir
 
   const write = (section, group, data) =>
@@ -222,7 +219,6 @@ try {
     check('ops refuses an unknown action', unknown.ok === false && unknown.code === 'unknown-action', unknown)
   }
 } finally {
-  if (created) await rm(join(ROOT, '..'), { recursive: true, force: true }).catch(() => {})
   await rm(ROOT, { recursive: true, force: true }).catch(() => {})
 }
 
